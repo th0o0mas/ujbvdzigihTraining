@@ -13,6 +13,8 @@ import { aeronefQuestion, engineSig } from './tests/culture.js';
 import { parseCultureEntry, parseAeronefEntry, loadCustomData, customStatus } from './core/custom.js';
 import { note20, weekKey, weekly, globalWeekly } from './core/stats.js';
 import { review, INTERVALS } from './flashcards.js';
+import { SILHOUETTES } from './data/silhouettes-data.js';
+import { silhouetteSvg, extent, VIEWS, shapesFor } from './silhouettes.js';
 import * as store from './core/storage.js';
 import { mergeFlashcards, cloudEnabled, encryptSecret, decryptSecret, utf8ToB64, b64ToUtf8, validName } from './core/cloud.js';
 import { TOTAL as EN_TOTAL } from './tests/anglais.js';
@@ -682,7 +684,7 @@ suite('Fiches aéronefs et questions de reconnaissance', () => {
   for (let s = 1; s <= 300; s++) {
     const rng = makeRng(s);
     const card = rng.pick(AERONEFS);
-    for (const type of ['constructeur', 'pays', 'identification', 'motorisation']) {
+    for (const type of ['constructeur', 'pays', 'identification', 'motorisation', 'silhouette']) {
       const q = aeronefQuestion(rng, card, type);
       ok(q.options.length === 4, 'reconnaissance : 4 propositions');
       const val = q.options[q.answer].value;
@@ -692,6 +694,9 @@ suite('Fiches aéronefs et questions de reconnaissance', () => {
       } else if (type === 'pays') {
         ok(val === card.pays, 'pays faux');
         q.options.forEach((o, i) => i !== q.answer && ok(!AERONEFS.some((x) => x.pays === o.value && x.paysKeys.some((g) => card.paysKeys.includes(g))), `pays : distracteur partiellement juste (${o.value} pour ${card.nom})`));
+      } else if (type === 'silhouette') {
+        ok(val === card.nom && q.visual.includes('<svg'), 'silhouette : mauvaise réponse ou image absente');
+        ok(q.options.every((o) => SILHOUETTES[AERONEFS.find((x) => x.nom === o.value).id]), 'silhouette : proposition sans silhouette');
       } else if (type === 'identification') {
         ok(val === card.nom, 'identification fausse');
         ok(q.options.every((o, i) => i === q.answer || AERONEFS.find((x) => x.nom === o.value).signes !== card.signes), 'identification : deux fiches identiques');
@@ -705,6 +710,43 @@ suite('Fiches aéronefs et questions de reconnaissance', () => {
   const mix = getTest('culture').generate(makeRng(4), 20, { content: 'mix' });
   ok(mix.filter((q) => q.meta.kind === 'aeronef').length === 8 && mix.filter((q) => q.meta.kind === 'bank').length === 12, 'culture : mélange 60/40');
   ok(getTest('culture').generate(makeRng(4), 20, { content: 'aero' }).every((q) => q.meta.kind === 'aeronef'), 'culture : aéronefs seuls');
+});
+
+/* ------------------------------------------------------------ silhouettes */
+suite('Silhouettes : couverture, validité et proportions', () => {
+  const builtIn = AERONEFS.filter((a) => !a.perso);
+  ok(builtIn.every((a) => SILHOUETTES[a.id]), `fiches sans silhouette : ${builtIn.filter((a) => !SILHOUETTES[a.id]).map((a) => a.id).join(', ')}`);
+  ok(Object.keys(SILHOUETTES).every((id) => AERONEFS.some((a) => a.id === id)), `silhouettes sans fiche : ${Object.keys(SILHOUETTES).filter((id) => !AERONEFS.some((a) => a.id === id)).join(', ')}`);
+  const sigs = new Set();
+  for (const [id, s] of Object.entries(SILHOUETTES)) {
+    let sig = '';
+    for (const v of Object.keys(VIEWS)) {
+      const shapes = shapesFor(s, v);
+      ok(shapes.length >= (s.body === 'flyingwing' ? 1 : 3), `${id} ${v} : silhouette vide`);
+      const bad = shapes.some((sh) => JSON.stringify(sh).match(/null|NaN/));
+      ok(!bad, `${id} ${v} : coordonnées invalides`);
+      const svg = silhouetteSvg(s, v);
+      ok(!parser.parseFromString(svg, 'image/svg+xml').getElementsByTagName('parsererror').length, `${id} ${v} : SVG invalide`);
+      sig += svg;
+    }
+    ok(!sigs.has(sig), `${id} : silhouette identique à une autre`);
+    sigs.add(sig);
+    // drawn dimensions must match the real ones (± 15 %)
+    const plan = extent(s, 'dessous'), side = extent(s, 'profil');
+    const near = (a, b, tol = 0.15) => Math.abs(a - b) <= tol * b;
+    if (s.heli) {
+      const d = Math.max(...(s.rotors || [s.rotor]).map((r) => r.d));
+      ok(near(plan.w, d, 0.05), `${id} : largeur vue de dessous ${plan.w.toFixed(1)} m ≠ rotor ${d} m`);
+    } else if (!s.tiltrotor) {
+      const span = s.wing.span;
+      ok(near(plan.w, span) || plan.w >= span, `${id} : envergure dessinée ${plan.w.toFixed(1)} m ≠ ${span} m`);
+      ok(plan.w <= span * 1.15, `${id} : silhouette plus large que l’envergure (${plan.w.toFixed(1)} m)`);
+      ok(near(plan.h, s.L, 0.2), `${id} : longueur vue de dessous ${plan.h.toFixed(1)} m ≠ ${s.L} m`);
+      ok(near(side.w, s.L, 0.2), `${id} : longueur de profil ${side.w.toFixed(1)} m ≠ ${s.L} m`);
+    }
+  }
+  // flashcards in silhouette mode: separate progress keys, accepted by the sanitiser
+  ok(Object.keys(mergeFlashcards({}, { 'sil-rafale': { box: 2, due: 1, ok: 1, ko: 0 } })).includes('sil-rafale'), 'progression silhouette rejetée');
 });
 
 /* ------------------------------------------------- fichiers personnels */

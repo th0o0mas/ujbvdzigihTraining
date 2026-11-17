@@ -100,9 +100,15 @@ async function writeRemote(doc) {
 
 /* ------------------------------------------------------------ synchronisation */
 /** flashcards: keep, for each card, the state with the most reviews (ties → most recent due date) */
+const cleanCard = (s) => {
+  if (!s || typeof s !== 'object') return null;
+  const n = (v, max) => (typeof v === 'number' && Number.isFinite(v) && v >= 0 && v <= max ? v : 0);
+  return { box: Math.round(n(s.box, 5)), due: n(s.due, 1e15), ok: Math.round(n(s.ok, 1e6)), ko: Math.round(n(s.ko, 1e6)) };
+};
+const cleanCards = (m) => Object.fromEntries(Object.entries(m && typeof m === 'object' ? m : {}).filter(([id]) => /^[a-z0-9-]{1,80}$/.test(id)).map(([id, s]) => [id, cleanCard(s)]).filter(([, s]) => s));
 export function mergeFlashcards(a = {}, b = {}) {
-  const out = { ...a };
-  for (const [id, s] of Object.entries(b)) {
+  const out = cleanCards(a);
+  for (const [id, s] of Object.entries(cleanCards(b))) {
     const c = out[id];
     const n = (x) => (x ? (x.ok || 0) + (x.ko || 0) : -1);
     if (!c || n(s) > n(c) || (n(s) === n(c) && (s.due || 0) > (c.due || 0))) out[id] = s;

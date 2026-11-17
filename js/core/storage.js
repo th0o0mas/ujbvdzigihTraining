@@ -46,16 +46,42 @@ export function add(testId, entry) {
   setDoc('history', all);
 }
 
+const num = (v, min = -Infinity, max = Infinity) => (typeof v === 'number' && Number.isFinite(v) && v >= min && v <= max ? v : undefined);
+const SAFE_ID = /^[a-z0-9_-]{1,40}$/i;
+/**
+ * Keeps only well-formed fields with the expected types: data coming from an imported file or from
+ * the online copy can never inject text into the page (defence against script injection).
+ */
+export function sanitizeEntry(e) {
+  if (!e || typeof e !== 'object') return null;
+  const date = num(e.date, 0), pct = num(e.pct, 0, 100);
+  if (date === undefined || pct === undefined) return null;
+  const out = { date, pct, mode: e.mode === 'training' ? 'training' : 'exam' };
+  for (const k of ['score', 'total', 'wrong', 'blank', 'duration', 'seed']) {
+    const v = num(e[k], 0, 1e10);
+    if (v !== undefined) out[k] = v;
+  }
+  if (e.kind === 'realtime') out.kind = 'realtime';
+  if (e.opts && typeof e.opts === 'object') {
+    const o = {};
+    for (const [k, v] of Object.entries(e.opts)) if (SAFE_ID.test(k) && typeof v === 'string' && SAFE_ID.test(v)) o[k] = v;
+    out.opts = o;
+  }
+  return out;
+}
+
 /** merge two histories ({ testId: [entries] }); duplicates (same test + same date) are skipped */
 export function mergeHistories(base, incoming) {
-  const all = JSON.parse(JSON.stringify(base || {}));
+  const all = {};
+  for (const [id, list] of Object.entries(base || {})) if (SAFE_ID.test(id) && Array.isArray(list)) all[id] = list.map(sanitizeEntry).filter(Boolean);
   let added = 0;
   for (const [id, list] of Object.entries(incoming || {})) {
-    if (!Array.isArray(list)) continue;
+    if (!SAFE_ID.test(id) || !Array.isArray(list)) continue;
     const cur = (all[id] ||= []);
     const seen = new Set(cur.map((e) => e.date));
-    for (const e of list) {
-      if (!e || typeof e.date !== 'number' || typeof e.pct !== 'number' || seen.has(e.date)) continue;
+    for (const raw of list) {
+      const e = sanitizeEntry(raw);
+      if (!e || seen.has(e.date)) continue;
       cur.push(e);
       seen.add(e.date);
       added++;

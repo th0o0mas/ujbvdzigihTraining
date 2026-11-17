@@ -797,6 +797,22 @@ suite('Connexion : chiffrement du jeton et encodage', () => {
   ok(validName('tom') && validName('pilote.01') && !validName('a') && !validName('Tom') && !validName('a b') && !validName('../x'), 'validation des identifiants');
 });
 
+/* ------------------------------------------- protection contre l'injection */
+suite('Sécurité : données importées ou distantes assainies', () => {
+  const evil = '<img src=x onerror=alert(1)>';
+  const { all } = store.mergeHistories({}, {
+    rotation: [{ date: 5, pct: 50, score: evil, total: evil, mode: evil, kind: evil, opts: { level: evil, [evil]: 'x' } }],
+    [evil]: [{ date: 6, pct: 10 }],
+    cubes: [{ date: 'x', pct: 10 }, { date: 7, pct: 1000 }, { date: 8, pct: 70, score: 7, total: 10 }],
+  });
+  ok(!JSON.stringify(all).includes('<'), 'du HTML a survécu à l’assainissement');
+  ok(all.rotation.length === 1 && all.rotation[0].score === undefined && all.rotation[0].mode === 'exam' && Object.keys(all.rotation[0].opts).length === 0, 'champs piégés non retirés');
+  ok(!(evil in all), 'identifiant d’épreuve piégé accepté');
+  ok(all.cubes.length === 1 && all.cubes[0].score === 7, 'entrées invalides non filtrées');
+  const fc = mergeFlashcards({}, { rafale: { box: evil, due: 3, ok: 1, ko: 0 }, [evil]: { box: 1 } });
+  ok(!JSON.stringify(fc).includes('<') && fc.rafale.box === 0, 'flashcards piégées non assainies');
+});
+
 /* -------------------------------------------------------------- render */
 const out = document.getElementById('out');
 const totalPass = results.reduce((a, r) => a + r.pass, 0);

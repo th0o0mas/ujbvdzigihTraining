@@ -52,7 +52,7 @@ function cardBack(c) {
     <dt>Signes distinctifs</dt><dd>${esc(c.signes)}</dd>
     ${c.anecdote ? `<dt>À retenir</dt><dd>${esc(c.anecdote)}</dd>` : ''}</dl>`;
 }
-const img = (c) => (c.image ? `<img src="${esc(c.image)}" alt="" style="max-width:100%;max-height:220px;border-radius:8px;margin:.5rem auto;display:block" onerror="this.remove()">` : '');
+const img = (c) => (c.image ? `<img src="${esc(c.image)}" alt="" style="max-width:100%;max-height:220px;border-radius:8px;margin:.5rem auto;display:block">` : '');
 
 export function renderFlashcards(app, topbar) {
   const progress = store.getDoc('flashcards');

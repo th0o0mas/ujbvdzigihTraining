@@ -8,8 +8,8 @@
 // puis créez les utilisateurs avec la page admin.html (voir HEBERGEMENT.md).
 // ---------------------------------------------------------------------------
 export const DATA_REPO = {
-  owner: '', // votre pseudo GitHub, ex. 'monpseudo'
-  repo: '', // nom du dépôt privé des résultats, ex. 'eopn-donnees'
+  owner: 'th0o0mas', // votre pseudo GitHub
+  repo: 'ihdiDuuuAuuuTuuuA', // dépôt PRIVÉ des résultats
   branch: 'main', // branche où écrire les résultats
   folder: 'utilisateurs', // dossier des fichiers de résultats (un fichier par utilisateur)
 };

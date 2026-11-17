@@ -8,8 +8,8 @@ les retrouvez sur tous vos appareils. Tout est gratuit : un seul compte GitHub, 
 
 | Dépôt | Visibilité | Contenu |
 |---|---|---|
-| `eopn-training` | **public** (obligatoire pour GitHub Pages gratuit) | le site : code, questions, et `js/users.js` (jeton **chiffré**) |
-| `eopn-donnees` | **privé** | vos résultats : `utilisateurs/<identifiant>.json` |
+| `ujbvdzigihTraining` (ex. eopn-training) | **public** (obligatoire pour GitHub Pages gratuit) | le site : code, questions, et `js/users.js` (jeton **chiffré**) |
+|  `ihdiDuuuAuuuTuuuA` (ex. eopn-donnees) | **privé** | vos résultats : `utilisateurs/<identifiant>.json` |
 
 - Le site accède au dépôt privé avec un **jeton GitHub** limité à ce seul dépôt (lecture/écriture des fichiers, rien d'autre).
 - Ce jeton est **chiffré avec votre mot de passe** (AES-256 + PBKDF2, 600 000 itérations) avant d'être mis dans le dépôt public.
@@ -38,8 +38,8 @@ les retrouvez sur tous vos appareils. Tout est gratuit : un seul compte GitHub, 
 
 Sur GitHub, **+ → New repository**, sans cocher aucune option (pas de README) :
 
-1. `eopn-training` → **Public** → *Create repository*.
-2. `eopn-donnees` → **Private** → cochez cette fois **Add a README file** (le dépôt doit contenir au moins un fichier) → *Create repository*.
+1. `ujbvdzigihTraining` (ex. eopn-training) → **Public** → *Create repository*.
+2.  `ihdiDuuuAuuuTuuuA` (ex. eopn-donnees) → **Private** → cochez cette fois **Add a README file** (le dépôt doit contenir au moins un fichier) → *Create repository*.
 
 ## Étape 3 — Envoyer le site
 
@@ -53,7 +53,7 @@ cd "/mnt/HDD Linux/Pilot/Website_training" && git push -u origin main
 
 ## Étape 4 — Activer GitHub Pages
 
-Dépôt `eopn-training` → **Settings → Pages** → *Source* : **Deploy from a branch** → branche **main**, dossier **/ (root)** → **Save**.
+Dépôt `ujbvdzigihTraining` (ex. eopn-training) → **Settings → Pages** → *Source* : **Deploy from a branch** → branche **main**, dossier **/ (root)** → **Save**.
 Après 1 à 2 minutes, l'adresse `https://PSEUDO.github.io/eopn-training/` s'affiche en haut de la page.
 
 ## Étape 5 — Créer le jeton d'accès au dépôt privé
@@ -62,7 +62,7 @@ GitHub → photo de profil → **Settings → Developer settings → Personal ac
 
 - *Token name* : `eopn-site`
 - *Expiration* : la durée maximale proposée (à renouveler à l'échéance, voir plus bas)
-- *Repository access* : **Only select repositories** → `eopn-donnees` **uniquement**
+- *Repository access* : **Only select repositories** →  `ihdiDuuuAuuuTuuuA` (ex. eopn-donnees) **uniquement**
 - *Permissions → Repository permissions → Contents* : **Read and write** (laissez tout le reste sur « No access »)
 - **Generate token**, puis copiez le jeton (`github_pat_…`). Il ne sera plus affiché ensuite.
 

@@ -1,0 +1,22 @@
+<!doctype html>
+<html lang="fr">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Auto-tests</title>
+  <link rel="stylesheet" href="css/style.css">
+  <style>
+    .ok { color: var(--ok); } .ko { color: var(--ko); }
+    pre { white-space: pre-wrap; font-size: .85rem; }
+  </style>
+</head>
+<body>
+  <main class="container narrow">
+    <h1>Auto-tests des générateurs</h1>
+    <p class="hint">Génère des milliers de questions avec des graines différentes et vérifie chaque réponse de façon indépendante.</p>
+    <div id="summary" class="panel">Exécution en cours…</div>
+    <div id="out"></div>
+  </main>
+  <script type="module" src="js/selftest.js"></script>
+</body>
+</html>

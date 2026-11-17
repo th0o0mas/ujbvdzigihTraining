@@ -1,0 +1,77 @@
+<!doctype html>
+<html lang="fr">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Administration</title>
+  <link rel="stylesheet" href="css/style.css">
+</head>
+<body>
+  <main class="container narrow" style="max-width:680px">
+    <h1>Administration — utilisateurs</h1>
+    <div class="panel">
+      <p>Cette page fabrique l’entrée d’un utilisateur pour <code>js/users.js</code> :
+        le jeton GitHub est <b>chiffré dans votre navigateur</b> avec le mot de passe choisi.
+        Rien n’est envoyé ailleurs, sauf la vérification facultative du jeton auprès de GitHub.</p>
+      <p class="hint">Pour changer un mot de passe, refaites simplement l’opération avec le même identifiant
+        et remplacez l’ancienne ligne.</p>
+    </div>
+    <form class="panel start-form" id="f">
+      <p id="repoInfo" class="hint"></p>
+      <label class="field-block">Identifiant (minuscules, chiffres, . _ -)<input name="name" autocomplete="off" autocapitalize="none" spellcheck="false" required></label>
+      <label class="field-block">Mot de passe (12 caractères minimum)<input type="password" name="pw" autocomplete="new-password" minlength="12" required></label>
+      <label class="field-block">Confirmation<input type="password" name="pw2" autocomplete="new-password" minlength="12" required></label>
+      <label class="field-block">Jeton GitHub (commence par <code>github_pat_</code>)<input type="password" name="token" autocomplete="off" spellcheck="false" required></label>
+      <label style="display:block;margin:.5rem 0"><input type="checkbox" name="check" checked> Vérifier le jeton auprès de GitHub</label>
+      <button class="btn primary" type="submit">Générer l’entrée</button>
+      <p id="msg" class="hint"></p>
+    </form>
+    <div class="panel" id="out" style="display:none">
+      <h2 style="margin-top:0">Ligne à coller dans <code>js/users.js</code></h2>
+      <p class="hint">Collez-la entre les accolades de <code>export const USERS = { … };</code>, enregistrez, puis envoyez la mise à jour sur GitHub.</p>
+      <textarea id="line" rows="5" style="width:100%;font-family:monospace;font-size:.8rem" readonly></textarea>
+      <button class="btn" id="copy" type="button">Copier</button>
+    </div>
+    <p><a href="./">← Retour au site</a></p>
+  </main>
+  <script type="module">
+    import { encryptSecret, normalizeName, validName, checkToken, cloudEnabled } from './js/core/cloud.js';
+    import { DATA_REPO } from './js/config.js';
+    const f = document.getElementById('f');
+    const msg = document.getElementById('msg');
+    document.getElementById('repoInfo').textContent = cloudEnabled
+      ? `Dépôt des résultats : ${DATA_REPO.owner}/${DATA_REPO.repo} (branche ${DATA_REPO.branch}).`
+      : '⚠ js/config.js n’est pas encore rempli (owner / repo) : la vérification du jeton est impossible.';
+    const say = (t, ok) => { msg.textContent = t; msg.style.color = ok ? 'var(--ok)' : ok === false ? 'var(--ko)' : 'var(--muted)'; };
+    f.onsubmit = async (e) => {
+      e.preventDefault();
+      const name = normalizeName(f.name.value);
+      if (!validName(name)) return say('Identifiant invalide : 2 à 32 caractères parmi a-z, 0-9, point, tiret, souligné.', false);
+      if (f.pw.value !== f.pw2.value) return say('Les deux mots de passe sont différents.', false);
+      if (f.pw.value.length < 12) return say('Mot de passe trop court (12 caractères minimum).', false);
+      const token = f.token.value.trim();
+      if (!/^(github_pat_|ghp_)/.test(token)) return say('Ce n’est pas un jeton GitHub (il doit commencer par github_pat_).', false);
+      try {
+        if (f.check.checked) {
+          if (!cloudEnabled) return say('Remplissez d’abord js/config.js, ou décochez la vérification.', false);
+          say('Vérification du jeton…');
+          const repo = await checkToken(token);
+          say(`Jeton valide pour ${repo}. Chiffrement…`, true);
+        } else say('Chiffrement…');
+        const entry = await encryptSecret(token, f.pw.value);
+        document.getElementById('line').value = `  ${JSON.stringify(name)}: ${JSON.stringify(entry)},`;
+        document.getElementById('out').style.display = '';
+        say('Entrée générée. Le jeton en clair n’est conservé nulle part.', true);
+        f.token.value = f.pw.value = f.pw2.value = '';
+      } catch (err) {
+        say(`Problème : ${err.message}`, false);
+      }
+    };
+    document.getElementById('copy').onclick = async () => {
+      const t = document.getElementById('line');
+      try { await navigator.clipboard.writeText(t.value); } catch { t.select(); document.execCommand('copy'); }
+      document.getElementById('copy').textContent = 'Copié ✓';
+    };
+  </script>
+</body>
+</html>

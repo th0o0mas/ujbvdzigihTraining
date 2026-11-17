@@ -1,0 +1,15 @@
+{
+  "_aide": "Ajoutez vos fiches dans la liste « aeronefs » ci-dessous, puis rechargez le site. Voir data/LISEZMOI.md.",
+  "_exemple": {
+    "nom": "Dassault Falcon 7X",
+    "categorie": "Avion civil",
+    "constructeur": "Dassault Aviation",
+    "pays": "France",
+    "role": "Avion d'affaires long-courrier",
+    "motorisation": "3 turboréacteurs Pratt & Whitney Canada PW307",
+    "signes": "Triréacteur d'affaires, deux réacteurs sur les flancs arrière et un dans la dérive.",
+    "anecdote": "Premier avion d'affaires à commandes de vol électriques.",
+    "image": "data/images/falcon7x.jpg"
+  },
+  "aeronefs": []
+}

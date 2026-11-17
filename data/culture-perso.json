@@ -1,0 +1,11 @@
+{
+  "_aide": "Ajoutez vos questions dans la liste « questions » ci-dessous, puis rechargez le site. Voir data/LISEZMOI.md.",
+  "_exemple": {
+    "question": "Quel est l'indicatif de la Patrouille de France ?",
+    "reponse": "Athos",
+    "distracteurs": ["Ramex", "Cartouche", "Rafale"],
+    "explication": "Les avions de la Patrouille de France utilisent l'indicatif Athos.",
+    "theme": "Armée"
+  },
+  "questions": []
+}

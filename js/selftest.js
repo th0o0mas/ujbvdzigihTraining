@@ -813,6 +813,14 @@ suite('Sécurité : données importées ou distantes assainies', () => {
   ok(!JSON.stringify(fc).includes('<') && fc.rafale.box === 0, 'flashcards piégées non assainies');
 });
 
+/* ------------------------------------------------ pages réellement affichées */
+const smokeErrors = await (await import('./main.js')).smokeTest();
+suite('Pages : affichage réel de chaque écran et mini-série de chaque épreuve', () => {
+  ok(smokeErrors.length === 0, `erreurs : ${smokeErrors.slice(0, 8).join(' | ')}`);
+  ok(store.currentUser() !== 'smoke-test', 'espace de test non refermé');
+  ok(!Object.keys(localStorage).some((k) => k.endsWith(':smoke-test')), 'données de test non effacées');
+});
+
 /* -------------------------------------------------------------- render */
 const out = document.getElementById('out');
 const totalPass = results.reduce((a, r) => a + r.pass, 0);

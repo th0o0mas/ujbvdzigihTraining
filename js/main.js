@@ -103,6 +103,33 @@ function renderAccount() {
   };
 }
 
+export const metaLabel = (t) => t.metaLabel || `${t.count} questions · ${fmtMinutes(t.time)}`;
+
+/* -------------------------------------------------------------- options */
+const OPTS_KEY = 'eopn-training.options.v1';
+function savedOpts(t) {
+  let all = {};
+  try { all = JSON.parse(localStorage.getItem(OPTS_KEY)) || {}; } catch { /* ignore */ }
+  const out = {};
+  for (const o of t.options || []) {
+    const v = all[t.id]?.[o.id];
+    out[o.id] = o.choices.some((c) => c.value === v) ? v : o.default;
+  }
+  return out;
+}
+function storeOpts(t, opts) {
+  try {
+    const all = JSON.parse(localStorage.getItem(OPTS_KEY)) || {};
+    all[t.id] = opts;
+    localStorage.setItem(OPTS_KEY, JSON.stringify(all));
+  } catch { /* ignore */ }
+}
+const timeFactor = (t, opts) => (t.options || []).reduce((f, o) => f * (o.choices.find((c) => c.value === opts?.[o.id])?.timeFactor || 1), 1);
+const optsLabel = (t, opts) => (t.options || [])
+  .filter((o) => opts && opts[o.id] !== undefined && opts[o.id] !== o.default)
+  .map((o) => o.choices.find((c) => c.value === opts[o.id])?.short || o.choices.find((c) => c.value === opts[o.id])?.label || '')
+  .join(', ');
+
 /* ------------------------------------------------------------------ home */
 function scoreBadges(id) {
   const h = store.history(id);
@@ -658,6 +685,65 @@ function renderStats() {
       renderStats();
     }
   };
+}
+
+/* --------------------------------------------------------------- self-test */
+/**
+ * Renders every page and plays a 2-question training series of every test, in an isolated
+ * storage space (nothing is saved to the real history nor synchronised). Returns the errors.
+ */
+export async function smokeTest() {
+  const errors = [];
+  const onErr = (ev) => errors.push(`exception : ${ev.message}`);
+  window.addEventListener('error', onErr);
+  const prevUser = store.currentUser();
+  store.setUser('smoke-test');
+  const wait = (ms) => new Promise((r) => setTimeout(r, ms));
+  const step = async (name, fn) => {
+    const before = errors.length;
+    try {
+      if (cleanup) { cleanup(); cleanup = null; }
+      await fn();
+    } catch (e) {
+      errors.push(`${name} : ${e.message}`);
+    }
+    for (let i = before; i < errors.length; i++) if (!errors[i].startsWith(name)) errors[i] = `${name} — ${errors[i]}`;
+  };
+  try {
+    await step('accueil', () => { renderHome(); if (!app.querySelector('.card')) throw new Error('aucune carte d’épreuve'); });
+    await step('progression', () => { renderStats(); if (!document.getElementById('statsBody')) throw new Error('page vide'); });
+    await step('flashcards', () => { cleanup = renderFlashcards(app, topbar); if (!document.getElementById('fcDue')) throw new Error('page vide'); });
+    for (const t of TESTS) {
+      await step(`présentation ${t.id}`, () => { renderIntro(t); if (!document.getElementById('startForm')) throw new Error('formulaire absent'); });
+      if (t.kind === 'realtime') {
+        await step(`lancement ${t.id}`, () => { runRealtime(t, { mode: 'training', opts: savedOpts(t) }); if (!document.getElementById('rt').innerHTML) throw new Error('vide'); });
+        continue;
+      }
+      for (const opts of [savedOpts(t), ...(t.options || []).flatMap((o) => o.choices.filter((c) => c.value !== o.default).map((c) => ({ ...savedOpts(t), [o.id]: c.value })))]) {
+        await step(`épreuve ${t.id} ${JSON.stringify(opts)}`, async () => {
+          runQuiz(t, { mode: 'training', count: 2, opts });
+          for (let k = 0; k < 20 && !/Résultats/.test(app.querySelector('h1')?.textContent || ''); k++) {
+            const primary = document.getElementById('primaryBtn');
+            const boxes = [...app.querySelectorAll('.options[data-part]')];
+            if (boxes.length && !app.querySelector('.feedback')) boxes.forEach((b) => b.querySelector('.opt').click());
+            else if (primary) primary.click();
+            const p2 = document.getElementById('primaryBtn');
+            if (p2 && !p2.disabled && app.querySelector('.options[data-part]') && !app.querySelector('.feedback')) p2.click();
+            await wait(5);
+          }
+          if (!/Résultats/.test(app.querySelector('h1')?.textContent || '')) throw new Error('la série ne se termine pas');
+          if (store.history(t.id).length < 1) throw new Error('résultat non enregistré');
+        });
+      }
+    }
+  } finally {
+    if (cleanup) { cleanup(); cleanup = null; }
+    for (const k of Object.keys(localStorage)) if (k.endsWith(':smoke-test')) localStorage.removeItem(k);
+    store.setUser(prevUser);
+    window.removeEventListener('error', onErr);
+    app.innerHTML = '';
+  }
+  return errors;
 }
 
 // start once custom content is loaded and every helper above is initialised

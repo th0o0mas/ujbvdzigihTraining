@@ -118,7 +118,8 @@ export function mergeFlashcards(a = {}, b = {}) {
 
 /** fetch the copy stored on GitHub, merge it with the local one, then write it back if needed */
 async function sync(force = false) {
-  if (!user) return;
+  // never send data that does not belong to the signed-in user (e.g. self-test sandbox)
+  if (!user || store.currentUser() !== user.name) return;
   clearTimeout(retryTimer);
   setStatus('syncing');
   try {
@@ -141,7 +142,7 @@ async function sync(force = false) {
 }
 
 function schedulePush(name) {
-  if (!user || !DOCS.includes(name)) return;
+  if (!user || !DOCS.includes(name) || store.currentUser() !== user.name) return;
   clearTimeout(pushTimer);
   setStatus('pending');
   pushTimer = setTimeout(() => sync(), 4000); // groups several changes into a single commit

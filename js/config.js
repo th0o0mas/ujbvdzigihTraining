@@ -13,3 +13,11 @@ export const DATA_REPO = {
   branch: 'main', // branche où écrire les résultats
   folder: 'utilisateurs', // dossier des fichiers de résultats (un fichier par utilisateur)
 };
+
+// Dépôt PUBLIC du site : la page « Admin » y met à jour la liste des utilisateurs (js/users.js).
+export const SITE_REPO = {
+  owner: 'th0o0mas',
+  repo: 'ujbvdzigihTraining',
+  branch: 'main',
+  usersFile: 'js/users.js',
+};

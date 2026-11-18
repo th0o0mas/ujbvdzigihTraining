@@ -6,7 +6,9 @@ import { note20, fmtNote, weekly, globalWeekly, weekLabel, weekKey } from './cor
 import { loadCustomData, customStatus } from './core/custom.js';
 import { renderFlashcards } from './flashcards.js';
 import { AERONEFS } from './data/aeronefs-data.js';
+import { PHOTOS } from './data/photos-data.js';
 import * as cloud from './core/cloud.js';
+import { SITE_REPO } from './config.js';
 
 const app = document.getElementById('app');
 let cleanup = null;
@@ -22,7 +24,9 @@ function route() {
   const parts = location.hash.replace(/^#\/?/, '').split('/').filter(Boolean);
   if (parts[0] === 'test' && getTest(parts[1])) renderIntro(getTest(parts[1]));
   else if (parts[0] === 'stats') renderStats();
+  else if (parts[0] === 'credits') renderCredits();
   else if (parts[0] === 'compte' && cloud.cloudEnabled) renderAccount();
+  else if (parts[0] === 'admin' && cloud.cloudEnabled && cloud.isAdmin()) renderAdmin();
   else if (parts[0] === 'flashcards') {
     document.title = 'Flashcards — Entraînement EOPN';
     cleanup = renderFlashcards(app, topbar);
@@ -33,6 +37,7 @@ window.addEventListener('hashchange', route);
 const SYNC_TXT = { idle: '', pending: '● modifications à envoyer', syncing: '↻ synchronisation…', ok: '✓ synchronisé', error: '⚠ hors ligne, nouvel essai bientôt' };
 const topbar = () => `<header class="topbar"><a href="#/" class="brand">Tests psychotechniques — EOPN</a>
   <nav><a href="#/">Épreuves</a><a href="#/flashcards">Flashcards</a><a href="#/stats">Progression</a>
+  ${cloud.cloudEnabled && cloud.isAdmin() ? '<a href="#/admin">Admin</a>' : ''}
   ${cloud.cloudEnabled && cloud.currentUser() ? `<a href="#/compte" title="${esc(cloud.currentUser().name)}">${esc(cloud.currentUser().name)} <span class="sync-dot" data-state="${cloud.syncStatus.state}">${SYNC_TXT[cloud.syncStatus.state]}</span></a>` : ''}</nav></header>`;
 cloud.onStatus((st) => document.querySelectorAll('.sync-dot').forEach((el) => {
   el.dataset.state = st.state;
@@ -84,8 +89,19 @@ function renderAccount() {
       <div class="stat">Synchronisation : <span class="sync-dot" data-state="${cloud.syncStatus.state}">${SYNC_TXT[cloud.syncStatus.state] || '—'}</span>
         ${cloud.syncStatus.error ? `<br><span class="hint" style="color:var(--ko)">${esc(cloud.syncStatus.error)}</span>` : ''}</div>
       <p class="hint">Vos résultats et votre progression dans les flashcards sont enregistrés dans le dépôt privé : vous les retrouvez sur n’importe quel appareil.
-        Pour changer de mot de passe, l’administrateur génère une nouvelle entrée avec la page <a href="admin.html">admin.html</a>.</p>
+        ${cloud.isAdmin() ? 'Vous êtes administrateur : gérez les comptes depuis la page <a href="#/admin">Admin</a>.' : 'Pour changer de mot de passe, demandez à l’administrateur.'}</p>
       <button class="btn" id="logoutBtn" type="button">Se déconnecter</button></div>
+    ${cloud.isAdmin() ? '' : `<details class="panel"><summary>Devenir administrateur (propriétaire du site uniquement)</summary>
+      <p>Pour ajouter des utilisateurs depuis le site, il faut une <b>clé d’administration</b> qui permet de modifier la liste des comptes dans le dépôt du site.</p>
+      <ol><li>Sur GitHub : <b>Settings → Developer settings → Fine-grained tokens → Generate new token</b>.</li>
+        <li><i>Repository access</i> : <b>Only select repositories</b> → le dépôt du site <b>${esc(SITE_REPO.repo)}</b> uniquement.</li>
+        <li><i>Permissions → Contents</i> : <b>Read and write</b>. Rien d’autre.</li>
+        <li>Collez la clé ci-dessous avec votre mot de passe : elle est chiffrée avec lui puis enregistrée.</li></ol>
+      <form id="admForm" class="start-form">
+        <label class="field-block">Votre mot de passe<input type="password" name="pw" autocomplete="current-password" required></label>
+        <label class="field-block">Clé d’administration (github_pat_…)<input type="password" name="token" autocomplete="off" spellcheck="false" required></label>
+        <button class="btn primary" type="submit">Activer</button> <span id="admMsg" class="hint"></span>
+      </form></details>`}
     ${nLocal ? `<div class="panel"><h2 style="margin-top:0">Résultats enregistrés sans connexion</h2>
       <p>Ce navigateur contient ${nLocal} session(s) faites sans être connecté. Voulez-vous les ajouter à votre compte ?</p>
       <button class="btn" id="importLocalBtn" type="button">Ajouter à mon compte</button> <span id="impMsg" class="hint"></span></div>` : ''}
@@ -95,11 +111,116 @@ function renderAccount() {
     location.hash = '#/';
     renderLogin();
   };
+  const af = document.getElementById('admForm');
+  if (af) af.onsubmit = async (e) => {
+    e.preventDefault();
+    const m = document.getElementById('admMsg');
+    m.style.color = 'var(--muted)';
+    m.textContent = 'Vérification…';
+    try {
+      await cloud.becomeAdmin(af.pw.value, af.token.value);
+      af.reset();
+      location.hash = '#/admin';
+    } catch (err) {
+      m.style.color = 'var(--ko)';
+      m.textContent = err.message;
+    }
+  };
   const imp = document.getElementById('importLocalBtn');
   if (imp) imp.onclick = () => {
     const n = cloud.importLocalData();
     document.getElementById('impMsg').textContent = `${n} session(s) ajoutée(s).`;
     imp.disabled = true;
+  };
+}
+
+/* ---------------------------------------------------------------- credits */
+function renderCredits() {
+  document.title = 'Crédits photos — Entraînement EOPN';
+  const name = (id) => AERONEFS.find((a) => a.id === id)?.nom || id;
+  const link = (url, txt) => (url ? `<a href="${esc(url)}" target="_blank" rel="noopener noreferrer">${esc(txt)}</a>` : esc(txt));
+  app.innerHTML = `${topbar()}<main class="container narrow"><h1>Crédits des photographies</h1>
+    <p class="lead">Photos issues de Wikimedia Commons, sous licences libres, redimensionnées pour le site. Merci à leurs auteurs.</p>
+    <div class="panel" style="overflow-x:auto"><table class="tbl"><tr><th>Aéronef</th><th>Auteur</th><th>Licence</th><th>Source</th></tr>
+      ${Object.entries(PHOTOS).sort((a, b) => name(a[0]).localeCompare(name(b[0]), 'fr')).map(([id, p]) => `<tr><td>${esc(name(id))}</td><td>${esc(p.author)}</td>
+        <td>${link(p.licenseUrl, p.license)}</td><td>${link(p.source, 'Commons')}</td></tr>`).join('')}</table></div></main>`;
+}
+
+/* ------------------------------------------------------------------ admin */
+function renderAdmin(flash = '') {
+  document.title = 'Admin — Entraînement EOPN';
+  const say = (id, txt, ok) => {
+    const el = document.getElementById(id);
+    el.style.color = ok === true ? 'var(--ok)' : ok === false ? 'var(--ko)' : 'var(--muted)';
+    el.textContent = txt;
+  };
+  if (!cloud.adminUnlocked()) {
+    app.innerHTML = `${topbar()}<main class="container narrow" style="max-width:520px"><h1>Administration</h1>
+      <form class="panel start-form" id="unlockForm">
+        <p>Retapez votre mot de passe pour déverrouiller la clé d’administration (elle n’est jamais enregistrée dans le navigateur).</p>
+        <label class="field-block">Mot de passe<input type="password" name="pw" autocomplete="current-password" required></label>
+        <button class="btn primary" type="submit">Déverrouiller</button> <span id="unMsg" class="hint"></span>
+      </form></main>`;
+    const f = document.getElementById('unlockForm');
+    f.onsubmit = async (e) => {
+      e.preventDefault();
+      say('unMsg', 'Vérification…');
+      try {
+        await cloud.unlockAdmin(f.pw.value);
+        renderAdmin();
+      } catch (err) {
+        say('unMsg', err.message, false);
+      }
+    };
+    return;
+  }
+  const users = cloud.userList();
+  app.innerHTML = `${topbar()}<main class="container narrow" style="max-width:640px"><h1>Administration des utilisateurs</h1>
+    ${flash ? `<div class="panel" style="border-color:var(--ok)">${esc(flash)}</div>` : ''}
+    <form class="panel start-form" id="addForm"><h2 style="margin-top:0">Ajouter un utilisateur ou changer un mot de passe</h2>
+      <label class="field-block">Identifiant (a-z, 0-9, . _ -)<input name="name" autocomplete="off" autocapitalize="none" spellcheck="false" required></label>
+      <label class="field-block">Mot de passe (12 caractères minimum)<input type="password" name="pw" autocomplete="new-password" minlength="12" required></label>
+      <label class="field-block">Confirmation<input type="password" name="pw2" autocomplete="new-password" minlength="12" required></label>
+      <button class="btn primary" type="submit">Enregistrer</button> <span id="addMsg" class="hint"></span>
+      <p class="hint">Si l’identifiant existe déjà, son mot de passe est remplacé. Transmettez le mot de passe à la personne de vive voix ou par un canal sûr.</p>
+    </form>
+    <div class="panel"><h2 style="margin-top:0">Comptes (${users.length})</h2>
+      <table class="tbl"><tr><th>Identifiant</th><th>Rôle</th><th></th></tr>
+      ${users.map((u) => `<tr><td><b>${esc(u.name)}</b>${u.me ? ' (vous)' : ''}</td><td>${u.admin ? 'Administrateur' : 'Utilisateur'}</td>
+        <td>${u.me ? '' : `<button class="btn small danger" data-del="${esc(u.name)}" type="button">Retirer</button>`}</td></tr>`).join('')}</table>
+      <span id="delMsg" class="hint"></span></div>
+    <p class="hint">Les changements sont publiés sur GitHub ; ils deviennent actifs pour la connexion en quelques minutes (jusqu’à 10 min, le temps que GitHub Pages et son cache se mettent à jour).
+      Tous les comptes partagent le même dépôt privé de résultats : un utilisateur averti pourrait techniquement lire les résultats des autres.</p>
+    <button class="btn" id="lockBtn" type="button">Verrouiller l’administration</button>
+  </main>`;
+  const f = document.getElementById('addForm');
+  f.onsubmit = async (e) => {
+    e.preventDefault();
+    if (f.pw.value !== f.pw2.value) return say('addMsg', 'Les deux mots de passe sont différents.', false);
+    say('addMsg', 'Chiffrement et publication…');
+    try {
+      const name = f.name.value;
+      const existed = await cloud.saveUser(name, f.pw.value);
+      renderAdmin(existed ? `Mot de passe de « ${name.trim().toLowerCase()} » remplacé.` : `Utilisateur « ${name.trim().toLowerCase()} » ajouté. Il pourra se connecter d’ici quelques minutes (jusqu’à 10 min).`);
+    } catch (err) {
+      say('addMsg', err.message, false);
+    }
+  };
+  app.querySelectorAll('[data-del]').forEach((b) => (b.onclick = async () => {
+    const name = b.dataset.del;
+    if (!confirm(`Retirer l’accès de « ${name} » ?`)) return;
+    const purge = confirm(`Supprimer aussi définitivement les résultats de « ${name} » ? (OK = supprimer, Annuler = les conserver)`);
+    say('delMsg', 'Publication…');
+    try {
+      await cloud.removeUser(name, purge);
+      renderAdmin(`« ${name} » a été retiré${purge ? ' et ses résultats supprimés' : ''}.`);
+    } catch (err) {
+      say('delMsg', err.message, false);
+    }
+  }));
+  document.getElementById('lockBtn').onclick = () => {
+    cloud.lockAdmin();
+    location.hash = '#/';
   };
 }
 
@@ -165,7 +286,7 @@ function renderHome() {
         <p class="meta">Sauvegarde / restauration de l’historique</p></div>
         <div class="card-icon" aria-hidden="true"><svg viewBox="0 0 64 64" fill="none" stroke="currentColor" stroke-width="2.5"><path d="M8 52h48M12 44l12-12 10 8 18-22"/><circle cx="52" cy="18" r="3" fill="currentColor"/></svg></div></a>
     </div></section>
-    <p class="hint" style="margin-top:2rem">Les questions sont générées aléatoirement à chaque session. Les consignes des épreuves de priorisation sont des consignes d’entraînement : appliquez celles qui vous seront données le jour J.
+    <p class="hint" style="margin-top:2rem"><a href="#/credits">Crédits des photos</a> · Les questions sont générées aléatoirement à chaque session. Les consignes des épreuves de priorisation sont des consignes d’entraînement : appliquez celles qui vous seront données le jour J.
       ${customStatus.culture || customStatus.aeronefs ? `<br>Contenus personnels chargés : ${customStatus.culture} question(s) de culture, ${customStatus.aeronefs} fiche(s) d’aéronef.` : ''}</p>
   </main>`;
 }
@@ -243,9 +364,10 @@ function optionHtml(o, i, cls = '') {
 }
 
 function questionBody(q) {
+  // the question comes before the picture: on a phone it stays visible without scrolling back up
   return `${q.context ? `<div class="q-context">${q.context}</div>` : ''}
-    ${q.visual ? `<div class="q-visual"><div class="paper">${q.visual}</div></div>` : ''}
-    <div class="q-prompt">${q.prompt}</div>`;
+    <div class="q-prompt">${q.prompt}</div>
+    ${q.visual ? `<div class="q-visual"><div class="paper">${q.visual}</div></div>` : ''}`;
 }
 
 function runQuiz(t, { mode, count, opts }) {
@@ -692,8 +814,10 @@ function renderStats() {
  * Renders every page and plays a 2-question training series of every test, in an isolated
  * storage space (nothing is saved to the real history nor synchronised). Returns the errors.
  */
-export async function smokeTest() {
+export async function smokeTest({ inspect } = {}) {
   const errors = [];
+  // optional page inspection (used by the phone / tablet layout test)
+  const look = (label) => { if (inspect) for (const msg of inspect(label)) errors.push(msg); };
   const onErr = (ev) => errors.push(`exception : ${ev.message}`);
   window.addEventListener('error', onErr);
   const prevUser = store.currentUser();
@@ -704,6 +828,7 @@ export async function smokeTest() {
     try {
       if (cleanup) { cleanup(); cleanup = null; }
       await fn();
+      look(name);
     } catch (e) {
       errors.push(`${name} : ${e.message}`);
     }
@@ -712,7 +837,33 @@ export async function smokeTest() {
   try {
     await step('accueil', () => { renderHome(); if (!app.querySelector('.card')) throw new Error('aucune carte d’épreuve'); });
     await step('progression', () => { renderStats(); if (!document.getElementById('statsBody')) throw new Error('page vide'); });
+    await step('crédits', () => { renderCredits(); if (app.querySelectorAll('tr').length < 10) throw new Error('liste vide'); });
     await step('flashcards', () => { cleanup = renderFlashcards(app, topbar); if (!document.getElementById('fcDue')) throw new Error('page vide'); });
+    const FC_PREFS = 'eopn-training.flashcards.prefs.v1';
+    const prevFc = localStorage.getItem(FC_PREFS);
+    try {
+      for (const [dir, view] of [['name', 'random'], ['desc', 'random'], ['photo', 'random']]) {
+        await step(`flashcards ${dir} ${view}`, async () => {
+          localStorage.setItem(FC_PREFS, JSON.stringify({ dir, view, cats: [...new Set(AERONEFS.map((a) => a.cat))] }));
+          cleanup = renderFlashcards(app, topbar);
+          document.getElementById('fcAll').click();
+          for (let k = 0; k < 3; k++) {
+            look(`flashcards ${dir} ${view} recto`);
+            document.getElementById('fcFlip').click();
+            look(`flashcards ${dir} ${view} verso`);
+            document.querySelector('#fcBtns [data-g="2"]').click();
+            await wait(2);
+          }
+        });
+      }
+      await step('catalogue', () => {
+        cleanup = renderFlashcards(app, topbar);
+        document.getElementById('fcList').click();
+        app.querySelectorAll('details').forEach((d) => (d.open = true));
+      });
+    } finally {
+      if (prevFc === null) localStorage.removeItem(FC_PREFS); else localStorage.setItem(FC_PREFS, prevFc);
+    }
     for (const t of TESTS) {
       await step(`présentation ${t.id}`, () => { renderIntro(t); if (!document.getElementById('startForm')) throw new Error('formulaire absent'); });
       if (t.kind === 'realtime') {
@@ -725,13 +876,17 @@ export async function smokeTest() {
           for (let k = 0; k < 20 && !/Résultats/.test(app.querySelector('h1')?.textContent || ''); k++) {
             const primary = document.getElementById('primaryBtn');
             const boxes = [...app.querySelectorAll('.options[data-part]')];
+            look(`${t.id} ${JSON.stringify(opts)} question`);
             if (boxes.length && !app.querySelector('.feedback')) boxes.forEach((b) => b.querySelector('.opt').click());
             else if (primary) primary.click();
+            if (app.querySelector('.feedback')) look(`${t.id} ${JSON.stringify(opts)} correction`);
             const p2 = document.getElementById('primaryBtn');
             if (p2 && !p2.disabled && app.querySelector('.options[data-part]') && !app.querySelector('.feedback')) p2.click();
             await wait(5);
           }
           if (!/Résultats/.test(app.querySelector('h1')?.textContent || '')) throw new Error('la série ne se termine pas');
+          app.querySelector('[data-f=all]')?.click();
+          app.querySelectorAll('details').forEach((d) => (d.open = true));
           if (store.history(t.id).length < 1) throw new Error('résultat non enregistré');
         });
       }

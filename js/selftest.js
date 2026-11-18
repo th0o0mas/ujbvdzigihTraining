@@ -13,10 +13,10 @@ import { aeronefQuestion, engineSig } from './tests/culture.js';
 import { parseCultureEntry, parseAeronefEntry, loadCustomData, customStatus } from './core/custom.js';
 import { note20, weekKey, weekly, globalWeekly } from './core/stats.js';
 import { review, INTERVALS } from './flashcards.js';
-import { SILHOUETTES } from './data/silhouettes-data.js';
-import { silhouetteSvg, extent, VIEWS, shapesFor } from './silhouettes.js';
+import { PHOTOS } from './data/photos-data.js';
 import * as store from './core/storage.js';
-import { mergeFlashcards, cloudEnabled, encryptSecret, decryptSecret, utf8ToB64, b64ToUtf8, validName } from './core/cloud.js';
+import { mergeFlashcards, cloudEnabled, encryptSecret, decryptSecret, utf8ToB64, b64ToUtf8, validName, encryptEntry, decryptAdmin, usersFileText, parseUsersFile } from './core/cloud.js';
+import { stickRate, pickGamepad } from './tests/secpil.js';
 import { TOTAL as EN_TOTAL } from './tests/anglais.js';
 import { PART5, PART6, PART7 } from './data/anglais-data.js';
 import { CULTURE } from './data/culture-data.js';
@@ -311,7 +311,8 @@ suite('Cadran — vérification indépendante (géométrie des aiguilles)', () =
     ok(steps(g) <= 40, `${g.name}: trop de graduations (${steps(g)}) pour être lisible`);
   }
   const t = getTest('cadran');
-  const doc = (svg) => parser.parseFromString(svg, 'image/svg+xml');
+  // the visual holds two layouts (wide and phone): parse it as an HTML fragment
+  const doc = (html) => parser.parseFromString(`<div>${html}</div>`, 'text/html');
   // angle (deg, clockwise from 12 o'clock) of a needle line, read back from the SVG
   const angleOf = (line) => {
     const [x1, y1, x2, y2] = ['x1', 'y1', 'x2', 'y2'].map((a) => +line.getAttribute(a));
@@ -325,6 +326,8 @@ suite('Cadran — vérification indépendante (géométrie des aiguilles)', () =
         const m = q.meta;
         const d = doc(q.visual);
         const grp = d.querySelector(`[data-inst="${m.target}"]`);
+        const grpNarrow = d.querySelector(`.panel-narrow [data-inst="${m.target}"]`);
+        ok(grpNarrow && grpNarrow.innerHTML === grp.innerHTML, 'agencement téléphone différent de l’agencement large');
         if (m.reverse) {
           reverse++;
           ok(q.options[q.answer].value === m.title, 'question inversée : mauvais instrument');
@@ -358,7 +361,7 @@ suite('Cadran — vérification indépendante (géométrie des aiguilles)', () =
           if (level === 'hard') ok(+grp.querySelector('[data-card]').getAttribute('data-card') === m.value && grp.innerHTML.includes(`rotate(${-m.value} `), 'cap : rose mal tournée');
           else ok(sameAngle(angleOf(grp.querySelector('[data-n="hdg"]')), m.value), 'cap : aiguille mal placée');
         }
-        ok(d.querySelectorAll('[data-inst]').length === (level === 'hard' ? 8 : 6), 'nombre d’instruments');
+        ok(d.querySelectorAll('.panel-wide [data-inst]').length === (level === 'hard' ? 8 : 6), 'nombre d’instruments');
       }
     }
   }
@@ -684,7 +687,7 @@ suite('Fiches aéronefs et questions de reconnaissance', () => {
   for (let s = 1; s <= 300; s++) {
     const rng = makeRng(s);
     const card = rng.pick(AERONEFS);
-    for (const type of ['constructeur', 'pays', 'identification', 'motorisation', 'silhouette']) {
+    for (const type of ['constructeur', 'pays', 'identification', 'motorisation', 'photo']) {
       const q = aeronefQuestion(rng, card, type);
       ok(q.options.length === 4, 'reconnaissance : 4 propositions');
       const val = q.options[q.answer].value;
@@ -694,9 +697,9 @@ suite('Fiches aéronefs et questions de reconnaissance', () => {
       } else if (type === 'pays') {
         ok(val === card.pays, 'pays faux');
         q.options.forEach((o, i) => i !== q.answer && ok(!AERONEFS.some((x) => x.pays === o.value && x.paysKeys.some((g) => card.paysKeys.includes(g))), `pays : distracteur partiellement juste (${o.value} pour ${card.nom})`));
-      } else if (type === 'silhouette') {
-        ok(val === card.nom && q.visual.includes('<svg'), 'silhouette : mauvaise réponse ou image absente');
-        ok(q.options.every((o) => SILHOUETTES[AERONEFS.find((x) => x.nom === o.value).id]), 'silhouette : proposition sans silhouette');
+      } else if (type === 'photo') {
+        ok(val === card.nom && q.visual.includes(PHOTOS[card.id].src), 'photo : mauvaise réponse ou image absente');
+        ok(q.options.every((o) => PHOTOS[AERONEFS.find((x) => x.nom === o.value).id]), 'photo : proposition sans photo');
       } else if (type === 'identification') {
         ok(val === card.nom, 'identification fausse');
         ok(q.options.every((o, i) => i === q.answer || AERONEFS.find((x) => x.nom === o.value).signes !== card.signes), 'identification : deux fiches identiques');
@@ -712,41 +715,31 @@ suite('Fiches aéronefs et questions de reconnaissance', () => {
   ok(getTest('culture').generate(makeRng(4), 20, { content: 'aero' }).every((q) => q.meta.kind === 'aeronef'), 'culture : aéronefs seuls');
 });
 
-/* ------------------------------------------------------------ silhouettes */
-suite('Silhouettes : couverture, validité et proportions', () => {
-  const builtIn = AERONEFS.filter((a) => !a.perso);
-  ok(builtIn.every((a) => SILHOUETTES[a.id]), `fiches sans silhouette : ${builtIn.filter((a) => !SILHOUETTES[a.id]).map((a) => a.id).join(', ')}`);
-  ok(Object.keys(SILHOUETTES).every((id) => AERONEFS.some((a) => a.id === id)), `silhouettes sans fiche : ${Object.keys(SILHOUETTES).filter((id) => !AERONEFS.some((a) => a.id === id)).join(', ')}`);
-  const sigs = new Set();
-  for (const [id, s] of Object.entries(SILHOUETTES)) {
-    let sig = '';
-    for (const v of Object.keys(VIEWS)) {
-      const shapes = shapesFor(s, v);
-      ok(shapes.length >= (s.body === 'flyingwing' ? 1 : 3), `${id} ${v} : silhouette vide`);
-      const bad = shapes.some((sh) => JSON.stringify(sh).match(/null|NaN/));
-      ok(!bad, `${id} ${v} : coordonnées invalides`);
-      const svg = silhouetteSvg(s, v);
-      ok(!parser.parseFromString(svg, 'image/svg+xml').getElementsByTagName('parsererror').length, `${id} ${v} : SVG invalide`);
-      sig += svg;
-    }
-    ok(!sigs.has(sig), `${id} : silhouette identique à une autre`);
-    sigs.add(sig);
-    // drawn dimensions must match the real ones (± 15 %)
-    const plan = extent(s, 'dessous'), side = extent(s, 'profil');
-    const near = (a, b, tol = 0.15) => Math.abs(a - b) <= tol * b;
-    if (s.heli) {
-      const d = Math.max(...(s.rotors || [s.rotor]).map((r) => r.d));
-      ok(near(plan.w, d, 0.05), `${id} : largeur vue de dessous ${plan.w.toFixed(1)} m ≠ rotor ${d} m`);
-    } else if (!s.tiltrotor) {
-      const span = s.wing.span;
-      ok(near(plan.w, span) || plan.w >= span, `${id} : envergure dessinée ${plan.w.toFixed(1)} m ≠ ${span} m`);
-      ok(plan.w <= span * 1.15, `${id} : silhouette plus large que l’envergure (${plan.w.toFixed(1)} m)`);
-      ok(near(plan.h, s.L, 0.2), `${id} : longueur vue de dessous ${plan.h.toFixed(1)} m ≠ ${s.L} m`);
-      ok(near(side.w, s.L, 0.2), `${id} : longueur de profil ${side.w.toFixed(1)} m ≠ ${s.L} m`);
-    }
+/* ----------------------------------------------------------------- photos */
+const photoChecks = await Promise.all(Object.entries(PHOTOS).map(async ([id, p]) => {
+  try {
+    const r = await fetch(p.src, { method: 'HEAD', cache: 'no-store' });
+    return [id, r.ok && /image\/jpeg/.test(r.headers.get('content-type') || '')];
+  } catch {
+    return [id, false];
   }
-  // flashcards in silhouette mode: separate progress keys, accepted by the sanitiser
-  ok(Object.keys(mergeFlashcards({}, { 'sil-rafale': { box: 2, due: 1, ok: 1, ko: 0 } })).includes('sil-rafale'), 'progression silhouette rejetée');
+}));
+suite('Photos des aéronefs : couverture, fichiers, crédits et licences', () => {
+  const builtIn = AERONEFS.filter((a) => !a.perso);
+  ok(builtIn.every((a) => PHOTOS[a.id]), `fiches sans photo : ${builtIn.filter((a) => !PHOTOS[a.id]).map((a) => a.id).join(', ')}`);
+  ok(Object.keys(PHOTOS).every((id) => AERONEFS.some((a) => a.id === id)), 'photo sans fiche');
+  for (const [id, ok2] of photoChecks) ok(ok2, `${id} : fichier image introuvable`);
+  const FREE = /^(public domain|cc0|cc by(-sa)? \d|gfdl|ogl)/i;
+  for (const [id, p] of Object.entries(PHOTOS)) {
+    ok(p.author && p.author.length > 1 && p.source && /^https:\/\/commons\.wikimedia\.org\//.test(p.source), `${id} : crédit incomplet`);
+    ok(FREE.test(p.license), `${id} : licence non libre « ${p.license} »`);
+    // the file name must not give the answer away
+    const file = p.src.split('/').pop();
+    ok(/^[0-9a-f]{12}\.jpg$/.test(file), `${id} : nom de fichier révélateur (${file})`);
+    ok(p.w <= 900 && p.h <= 900, `${id} : image trop grande`);
+  }
+  ok(new Set(Object.values(PHOTOS).map((p) => p.src)).size === Object.keys(PHOTOS).length, 'deux aéronefs partagent la même photo');
+  ok(Object.keys(mergeFlashcards({}, { 'pho-rafale': { box: 2, due: 1, ok: 1, ko: 0 } })).includes('pho-rafale'), 'progression photo rejetée');
 });
 
 /* ------------------------------------------------- fichiers personnels */
@@ -828,6 +821,42 @@ const cryptoRes = {
   bad: await decryptSecret(entryA, 'mot de passe incorrect'),
   tampered: await decryptSecret({ ...entryA, data: entryA.data.slice(0, -4) + (entryA.data.slice(-4) === 'AAAA' ? 'BBBB' : 'AAAA') }, 'mot de passe correct'),
 };
+const admEntry = await encryptEntry('phrase de passe administrateur', 'github_pat_DONNEES', 'github_pat_ADMIN', 1000);
+const userEntry = await encryptEntry('phrase de passe utilisateur', 'github_pat_DONNEES', null, 1000);
+const admRes = {
+  data: await decryptSecret(admEntry, 'phrase de passe administrateur'),
+  adm: await decryptAdmin(admEntry, 'phrase de passe administrateur'),
+  admBad: await decryptAdmin(admEntry, 'mauvais'),
+  userAdm: await decryptAdmin(userEntry, 'phrase de passe utilisateur'),
+  userData: await decryptSecret(userEntry, 'phrase de passe utilisateur'),
+};
+suite('Administration : entrées chiffrées et fichier des utilisateurs', () => {
+  ok(admRes.data === 'github_pat_DONNEES' && admRes.adm === 'github_pat_ADMIN', 'entrée administrateur : déchiffrement');
+  ok(admRes.admBad === null, 'clé d’administration lisible avec un mauvais mot de passe');
+  ok(admRes.userAdm === null && admRes.userData === 'github_pat_DONNEES', 'entrée utilisateur : pas de clé d’administration');
+  ok(admEntry.iv !== admEntry.adm.iv, 'les deux clés doivent avoir des vecteurs différents');
+  ok(!JSON.stringify([admEntry, userEntry]).includes('github_pat'), 'clé en clair dans une entrée');
+  // users.js round trip, including base64 values containing "//"
+  const users = { zoe: { salt: 'a//b==', iv: 'c//d', data: 'e+/f//g', iter: 600000 }, abel: { ...admEntry } };
+  const back = parseUsersFile(usersFileText(users));
+  ok(JSON.stringify(back) === JSON.stringify({ abel: admEntry, zoe: users.zoe }), 'users.js : lecture/écriture non fidèle');
+  ok(Object.keys(parseUsersFile('export const USERS = {\n  "x": {"salt":"s","iv":"i","data":"d//e","iter":1},\n};\n')).length === 1, 'users.js : ancien format (virgule finale) illisible');
+});
+suite('SECPIL : joystick', () => {
+  const r0 = stickRate(0.03, -0.04);
+  ok(r0.x === 0 && r0.y === 0, 'zone morte');
+  const fwd = stickRate(0, -1, { invertY: true });
+  ok(fwd.y === 1, 'profondeur inversée : manche vers l’avant → la croix descend');
+  ok(stickRate(0, -1, { invertY: false }).y === -1, 'axes directs : manche vers l’avant → la croix monte');
+  ok(stickRate(1, 0).x === 1 && stickRate(-1, 0).x === -1, 'roulis : manche à droite → la croix va à droite');
+  ok(Math.abs(stickRate(0.53, 0).x - 0.5) < 1e-9, 'mise à l’échelle après la zone morte');
+  ok(stickRate(NaN, 0).x === 0, 'axe invalide');
+  const pads = [null, { id: 'Xbox Controller', axes: [0, 0], connected: true }, { id: 'T.16000M (Vendor: 044f Product: b10a)', axes: [0, 0, 0, 0], connected: true }];
+  ok(pickGamepad(pads).id.startsWith('T.16000M'), 'le T.16000M doit être choisi en priorité');
+  ok(pickGamepad([null, pads[1]]).id === 'Xbox Controller', 'autre joystick accepté');
+  ok(pickGamepad([null]) === null, 'aucun joystick');
+});
+
 suite('Connexion : chiffrement du jeton et encodage', () => {
   ok(cryptoRes.good === secret, 'le bon mot de passe doit déchiffrer le jeton');
   ok(cryptoRes.bad === null, 'un mauvais mot de passe ne doit rien déchiffrer');
@@ -862,6 +891,33 @@ suite('Pages : affichage réel de chaque écran et mini-série de chaque épreuv
   ok(store.currentUser() !== 'smoke-test', 'espace de test non refermé');
   ok(!Object.keys(localStorage).some((k) => k.endsWith(':smoke-test')), 'données de test non effacées');
 });
+
+/* --------------------------------------------------- téléphone et tablette */
+// The site is opened in frames of phone (375 px) and tablet (768 px) width; every screen is
+// rendered and checked for elements wider than the screen. Runs one frame at a time.
+const layoutRun = (width) => new Promise((resolve) => {
+  const f = document.createElement('iframe');
+  f.style.cssText = `width:${width}px;height:760px;border:0;position:absolute;left:-12000px;top:0`;
+  const timer = setTimeout(() => done({ width, problems: ['délai dépassé'] }), 240000);
+  function done(r) {
+    clearTimeout(timer);
+    removeEventListener('message', onMsg);
+    f.remove();
+    resolve(r);
+  }
+  function onMsg(ev) {
+    if (ev.source === f.contentWindow && ev.data && ev.data.type === 'layout-test') done(ev.data);
+  }
+  addEventListener('message', onMsg);
+  f.src = 'layout-test.html';
+  document.body.appendChild(f);
+});
+const layouts = [await layoutRun(375), await layoutRun(768)];
+for (const l of layouts) {
+  suite(`Mise en page ${l.width === 375 ? 'téléphone' : 'tablette'} (${l.width} px) : aucun élément ne dépasse de l’écran`, () => {
+    ok(l.problems.length === 0, `${l.problems.length} problème(s) : ${l.problems.slice(0, 8).join(' | ')}`);
+  });
+}
 
 /* -------------------------------------------------------------- render */
 const out = document.getElementById('out');

@@ -116,3 +116,29 @@ GitHub → photo de profil → **Settings → Developer settings → Personal ac
 - **Appareil perdu** : révoquez le jeton sur GitHub (Fine-grained tokens → *Delete*), créez-en un nouveau, refaites l'étape 6.2.
 - **Sauvegarde** : vos résultats sont versionnés dans le dépôt privé ; la page *Progression* permet aussi un export en fichier.
 - **Version locale** : tant que `owner` est vide dans `js/config.js`, le site fonctionne sans connexion, hors ligne.
+
+---
+
+## Ajouter des utilisateurs depuis le site (administration)
+
+À faire une seule fois, pour vous donner le rôle d'administrateur :
+
+1. GitHub → **Settings → Developer settings → Fine-grained tokens → Generate new token** :
+   *Repository access* = **Only select repositories** → le dépôt **du site** (`ujbvdzigihTraining`) uniquement ;
+   *Permissions → Contents* = **Read and write** ; rien d'autre. Copiez la clé.
+2. Sur le site connecté : cliquez votre identifiant (en haut à droite) → **Devenir administrateur** →
+   votre mot de passe + la clé → **Activer**. La clé est chiffrée avec votre mot de passe et enregistrée.
+
+Ensuite, le lien **Admin** apparaît : retapez votre mot de passe pour déverrouiller, puis ajoutez un
+utilisateur (identifiant + mot de passe), changez un mot de passe ou retirez un compte. Le changement est
+publié automatiquement ; il est actif en quelques minutes (cache de GitHub Pages, 10 min maximum).
+
+- Tous les comptes partagent le même dépôt privé de résultats : chacun ne voit que les siens dans le site,
+  mais un utilisateur averti pourrait techniquement lire ceux des autres.
+- La clé d'administration n'est jamais gardée dans le navigateur : elle est déchiffrée à chaque déverrouillage.
+
+## Joystick pour le SECPIL
+
+Branchez le joystick (testé pour le Thrustmaster T.16000M, tout joystick USB convient), choisissez
+**Commande du manche → Joystick** avant de commencer, puis **appuyez sur un bouton du joystick** : le navigateur
+ne le rend visible qu'après une action. Le palonnier reste aux flèches ← → du clavier.

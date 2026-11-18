@@ -4,7 +4,7 @@
 // son mot de passe (AES-256-GCM, clé dérivée par PBKDF2-SHA-256). Le bon mot de passe
 // déchiffre le jeton, qui permet de lire/écrire le fichier de résultats de l'utilisateur
 // dans le dépôt privé (js/config.js). Sans le mot de passe, le jeton est inutilisable.
-import { DATA_REPO } from '../config.js';
+import { DATA_REPO, SITE_REPO } from '../config.js';
 import { USERS } from '../users.js';
 import * as store from './storage.js';
 
@@ -57,6 +57,51 @@ export async function decryptSecret(entry, password) {
     return null;
   }
 }
+/**
+ * User entry: the shared results key encrypted with the user's password, and — for an
+ * administrator only — the admin key (write access to js/users.js) encrypted with the same password.
+ */
+export async function encryptEntry(password, dataToken, adminToken = null, iterations = ITERATIONS) {
+  const salt = crypto.getRandomValues(new Uint8Array(16));
+  const key = await deriveKey(password, salt, iterations);
+  const seal = async (secret) => {
+    const iv = crypto.getRandomValues(new Uint8Array(12));
+    const ct = new Uint8Array(await crypto.subtle.encrypt({ name: 'AES-GCM', iv }, key, enc.encode(secret)));
+    return { iv: bytesToB64(iv), data: bytesToB64(ct) };
+  };
+  const e = { salt: bytesToB64(salt), ...(await seal(dataToken)), iter: iterations };
+  if (adminToken) e.adm = await seal(adminToken);
+  return e;
+}
+/** admin key of an entry, or null (wrong password / not an administrator) */
+export async function decryptAdmin(entry, password) {
+  if (!entry || !entry.adm) return null;
+  return decryptSecret({ salt: entry.salt, iter: entry.iter, iv: entry.adm.iv, data: entry.adm.data }, password);
+}
+
+/* users.js is generated, never edited by hand: header + one JSON line per user */
+export function usersFileText(users) {
+  const names = Object.keys(users).sort();
+  return `// ---------------------------------------------------------------------------
+// Utilisateurs autorisés — fichier GÉNÉRÉ par la page « Admin » du site (ne pas modifier à la main).
+// Chaque entrée contient la clé d’accès aux résultats CHIFFRÉE avec le mot de passe de
+// l’utilisateur (AES-256-GCM, PBKDF2-SHA-256) ; « adm » (administrateur seulement) contient la clé
+// d’administration chiffrée avec le même mot de passe. Sans les mots de passe, rien n’est lisible.
+// ---------------------------------------------------------------------------
+export const USERS = {
+${names.map((n) => `  ${JSON.stringify(n)}: ${JSON.stringify(users[n])},`).join('\n')}
+};
+`;
+}
+export function parseUsersFile(text) {
+  const start = text.indexOf('{', text.indexOf('export const USERS'));
+  const end = text.lastIndexOf('}');
+  if (start < 0 || end < start) throw new Error('fichier des utilisateurs illisible');
+  // only whole comment lines are dropped: base64 values may contain "//"
+  const json = text.slice(start, end + 1).split('\n').filter((l) => !/^\s*\/\//.test(l)).join('\n').replace(/,(\s*[}\]])/g, '$1');
+  return JSON.parse(json);
+}
+
 export const normalizeName = (s) => String(s || '').trim().toLowerCase();
 export const validName = (s) => /^[a-z0-9][a-z0-9._-]{1,31}$/.test(s);
 
@@ -195,6 +240,7 @@ export async function logout() {
     localStorage.removeItem(SESSION_KEY);
   } catch { /* ignore */ }
   user = null;
+  adminToken = null;
   fileSha = null;
   store.setUser('local');
 }
@@ -214,6 +260,95 @@ export async function checkToken(token) {
   if (!j.private) throw new Error('attention : le dépôt de données est PUBLIC, rendez-le privé');
   if (j.permissions && !j.permissions.push) throw new Error('le jeton n’a pas le droit d’écrire dans le dépôt (Contents : Read and write)');
   return j.full_name;
+}
+
+/* ------------------------------------------------------------ administration */
+let adminToken = null; // kept in memory only, never stored
+export const isAdmin = () => !!(user && USERS[user.name] && USERS[user.name].adm);
+export const adminUnlocked = () => !!adminToken;
+export const userList = () => Object.keys(USERS).sort().map((n) => ({ name: n, admin: !!USERS[n].adm, me: user && n === user.name }));
+
+async function siteApi(path, opts = {}, token = adminToken) {
+  return fetch(`https://api.github.com/repos/${SITE_REPO.owner}/${SITE_REPO.repo}${path}`, {
+    cache: 'no-store', ...opts,
+    headers: { Authorization: `Bearer ${token}`, Accept: 'application/vnd.github+json', 'X-GitHub-Api-Version': '2022-11-28', ...(opts.headers || {}) },
+  });
+}
+const siteMessage = (r) => (r.status === 401 ? 'clé d’administration expirée ou révoquée' : r.status === 403 || r.status === 404 ? 'la clé d’administration n’a pas le droit d’écrire dans le dépôt du site' : `erreur GitHub ${r.status}`);
+
+/** checks that a key can write into the site repository */
+export async function checkAdminToken(token) {
+  const r = await siteApi('', {}, token);
+  if (!r.ok) throw new Error(siteMessage(r));
+  const j = await r.json();
+  if (j.permissions && !j.permissions.push) throw new Error('la clé n’a que la lecture : il faut « Contents : Read and write » sur le dépôt du site');
+  return j.full_name;
+}
+
+/** read users.js on GitHub, apply `change(users)`, write it back (retries if modified meanwhile) */
+async function updateUsers(change, message) {
+  if (!adminToken) throw new Error('administration verrouillée');
+  const path = `/contents/${SITE_REPO.usersFile}`;
+  for (let attempt = 0; attempt < 3; attempt++) {
+    const r = await siteApi(`${path}?ref=${encodeURIComponent(SITE_REPO.branch)}`);
+    if (!r.ok) throw new Error(siteMessage(r));
+    const j = await r.json();
+    const users = parseUsersFile(b64ToUtf8(j.content));
+    await change(users);
+    const w = await siteApi(path, { method: 'PUT', body: JSON.stringify({ message, content: utf8ToB64(usersFileText(users)), sha: j.sha, branch: SITE_REPO.branch }) });
+    if (w.status === 409 || w.status === 422) continue;
+    if (!w.ok) throw new Error(siteMessage(w));
+    for (const k of Object.keys(USERS)) delete USERS[k];
+    Object.assign(USERS, users); // keep this page in sync
+    return;
+  }
+  throw new Error('le fichier a été modifié en même temps ailleurs, réessayez');
+}
+
+/** unlock the admin key with the administrator's password */
+export async function unlockAdmin(password) {
+  const t = await decryptAdmin(USERS[user?.name], password);
+  if (!t) throw new Error('mot de passe incorrect');
+  await checkAdminToken(t);
+  adminToken = t;
+}
+export const lockAdmin = () => { adminToken = null; };
+
+/** first administrator: attach an admin key to the signed-in account */
+export async function becomeAdmin(password, token) {
+  token = String(token || '').trim();
+  const mine = await decryptSecret(USERS[user?.name], password);
+  if (!mine || mine !== user.token) throw new Error('mot de passe incorrect');
+  await checkAdminToken(token);
+  adminToken = token;
+  await updateUsers(async (u) => { u[user.name] = await encryptEntry(password, user.token, token); }, `Administration activée pour ${user.name}`);
+}
+
+/** add a user, or give an existing one a new password */
+export async function saveUser(name, password) {
+  name = normalizeName(name);
+  if (!validName(name)) throw new Error('identifiant invalide (2 à 32 caractères : a-z, 0-9, . _ -)');
+  if (!password || password.length < 12) throw new Error('mot de passe trop court (12 caractères minimum)');
+  const existed = !!USERS[name];
+  await updateUsers(async (u) => {
+    const keepAdmin = u[name] && u[name].adm ? adminToken : null; // an administrator stays administrator
+    u[name] = await encryptEntry(password, user.token, keepAdmin);
+  }, existed ? `Nouveau mot de passe pour ${name}` : `Ajout de l’utilisateur ${name}`);
+  return existed;
+}
+
+/** remove a user (and optionally their results file) */
+export async function removeUser(name, deleteResults) {
+  if (name === user.name) throw new Error('vous ne pouvez pas supprimer votre propre compte');
+  await updateUsers(async (u) => { delete u[name]; }, `Suppression de l’utilisateur ${name}`);
+  if (deleteResults) {
+    const path = `/contents/${DATA_REPO.folder || 'utilisateurs'}/${encodeURIComponent(name)}.json`;
+    const r = await api(`${path}?ref=${encodeURIComponent(DATA_REPO.branch || 'main')}`);
+    if (r.ok) {
+      const { sha } = await r.json();
+      await api(path, { method: 'DELETE', body: JSON.stringify({ message: `Résultats de ${name} supprimés`, sha, branch: DATA_REPO.branch || 'main' }) });
+    }
+  }
 }
 
 /** copy the results recorded without an account in this browser into the signed-in account */

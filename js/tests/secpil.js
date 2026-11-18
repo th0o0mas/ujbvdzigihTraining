@@ -42,20 +42,42 @@ export function makeSequence(rng, level, duration = ROUND_SEC) {
 }
 export const evalSequence = (items) => items.reduce((a, it) => (it.op === 'start' ? it.v : it.op === 'add' ? a + it.v : a * it.v), 0);
 
+/* ---------------------------------------------------------------- joystick */
+export const JOY_SPEED = 1.5; // normalised units per second at full deflection
+/** stick axes → rate in [-1, 1] (screen: x right, y down), with dead zone and rescaling */
+export function stickRate(ax, ay, { invertY = true, deadzone = 0.06 } = {}) {
+  const dz = (v) => {
+    const a = Math.abs(v);
+    if (!Number.isFinite(v) || a <= deadzone) return 0;
+    return Math.sign(v) * Math.min(1, (a - deadzone) / (1 - deadzone));
+  };
+  // Gamepad API: stick forward = negative Y. Inverted (as in an aircraft): forward → the cross goes down.
+  return { x: dz(ax), y: invertY ? -dz(ay) : dz(ay) };
+}
+/** connected joystick, preferring a Thrustmaster T.16000M */
+export function pickGamepad(list = (navigator.getGamepads ? navigator.getGamepads() : [])) {
+  const pads = [...list].filter((g) => g && g.connected !== false && g.axes && g.axes.length >= 2);
+  return pads.find((g) => /16000|thrustmaster/i.test(g.id)) || pads[0] || null;
+}
+
 export function run(root, { mode, onFinish, opts = {} }) {
   const rng = makeRng(randomSeed());
   const training = mode === 'training';
   const level = LEVELS[opts.level] ? opts.level : 'normal';
   const L = LEVELS[level];
   const invert = opts.axes !== 'normal';
+  const joystick = opts.control === 'joystick';
   root.innerHTML = `
     <div class="panel" id="sp-intro">
       <h2 style="margin-top:0">SECPIL — trois tâches simultanées (${L.label})</h2>
       <ul>
-        <li><b>Manche (souris)</b> : gardez la croix orange sur le <b>point vert</b> qui se déplace. ${invert ? 'Les axes sont <b>inversés</b> comme sur un manche : souris vers le haut → la croix descend, souris vers la gauche → la croix va à droite.' : 'Axes normaux.'}</li>
+        <li><b>Manche (${joystick ? 'joystick' : 'souris'})</b> : gardez la croix orange sur le <b>point vert</b> qui se déplace. ${joystick
+          ? (invert ? 'Profondeur inversée comme en avion : manche vers l’avant → la croix descend ; manche à droite → la croix va à droite.' : 'Axes directs : manche vers l’avant → la croix monte.') + ' Plus vous inclinez le manche, plus la croix se déplace vite.'
+          : invert ? 'Les axes sont <b>inversés</b> comme sur un manche : souris vers le haut → la croix descend, souris vers la gauche → la croix va à droite.' : 'Axes normaux.'}</li>
         <li><b>Palonnier (flèches ← →)</b> : en haut, gardez le curseur jaune sous la <b>bille rouge</b>.</li>
         <li><b>Calcul</b> : des nombres s’affichent brièvement au centre. Faites le total de tête ; il vous sera demandé à la fin de la manche.</li>
-        <li>${ROUNDS} manches de ${ROUND_SEC} s. La souris est capturée pendant la manche (Échap pour la libérer).</li></ul>
+        <li>${ROUNDS} manches de ${ROUND_SEC} s.${joystick ? '' : ' La souris est capturée pendant la manche (Échap pour la libérer).'}</li></ul>
+      ${joystick ? '<p id="sp-joy" class="panel" style="margin:.6rem 0"></p>' : ''}
       <button class="btn primary" id="sp-start" type="button">Démarrer la manche 1</button>
     </div>
     <div id="sp-game" style="display:none">
@@ -73,7 +95,7 @@ export function run(root, { mode, onFinish, opts = {} }) {
   const keys = { left: false, right: false };
 
   const onMove = (e) => {
-    if (!state || !state.running) return;
+    if (!state || !state.running || joystick) return;
     const s = invert ? -1 : 1;
     state.cur.x = clamp(state.cur.x + s * e.movementX * 0.0045, -1, 1);
     state.cur.y = clamp(state.cur.y + s * e.movementY * 0.0045, -1, 1);
@@ -92,12 +114,26 @@ export function run(root, { mode, onFinish, opts = {} }) {
   document.addEventListener('keyup', ku);
   document.addEventListener('pointerlockchange', onLock);
   const lock = () => { try { const p = cv.requestPointerLock && cv.requestPointerLock(); if (p && p.catch) p.catch(onLock); } catch { onLock(); } };
-  cv.addEventListener('click', () => state && state.running && lock());
+  cv.addEventListener('click', () => state && state.running && !joystick && lock());
+  // joystick status on the intro screen (browsers only expose a pad after a button press)
+  let joyRaf = null;
+  const joyStatus = () => {
+    const el = root.querySelector('#sp-joy');
+    if (el && root.querySelector('#sp-intro').style.display !== 'none') {
+      const gp = pickGamepad();
+      el.innerHTML = gp
+        ? `🎮 <b>${gp.id.replace(/[<>&]/g, '')}</b><br>X ${gp.axes[0].toFixed(2)} · Y ${gp.axes[1].toFixed(2)} — bougez le manche pour vérifier.`
+        : '🎮 Aucun joystick détecté : branchez-le puis <b>appuyez sur un de ses boutons</b> (le navigateur ne le montre qu’après une action).';
+      el.style.borderColor = gp ? 'var(--ok)' : 'var(--warn)';
+    }
+    joyRaf = requestAnimationFrame(joyStatus);
+  };
+  if (joystick) joyRaf = requestAnimationFrame(joyStatus);
 
   function startRound() {
     root.querySelector('#sp-intro').style.display = 'none';
     root.querySelector('#sp-game').style.display = '';
-    lock();
+    if (!joystick) lock();
     const diff = 1 + round * 0.08; // a little harder each round
     state = {
       running: true, t: 0, last: performance.now(), diff,
@@ -119,6 +155,16 @@ export function run(root, { mode, onFinish, opts = {} }) {
     s.last = now;
     s.t += dt;
     s.rud = clamp(s.rud + ((keys.right ? 1 : 0) - (keys.left ? 1 : 0)) * 1.25 * dt, -1, 1);
+    if (joystick) {
+      const gp = pickGamepad();
+      const lockEl = root.querySelector('#sp-lock');
+      if (gp) {
+        const r = stickRate(gp.axes[0], gp.axes[1], { invertY: invert });
+        s.cur.x = clamp(s.cur.x + r.x * JOY_SPEED * dt, -1, 1);
+        s.cur.y = clamp(s.cur.y + r.y * JOY_SPEED * dt, -1, 1);
+        if (lockEl.textContent) lockEl.textContent = '';
+      } else lockEl.textContent = 'Joystick non détecté — appuyez sur un de ses boutons';
+    }
     const tg = target(s), b = ball(s);
     const d = Math.hypot(s.cur.x - tg.x, s.cur.y - tg.y);
     s.samples += dt;
@@ -229,6 +275,7 @@ export function run(root, { mode, onFinish, opts = {} }) {
 
   root.querySelector('#sp-start').onclick = startRound;
   return () => {
+    cancelAnimationFrame(joyRaf);
     if (state) state.running = false;
     cancelAnimationFrame(raf);
     if (document.pointerLockElement) document.exitPointerLock();
@@ -259,14 +306,20 @@ export default {
       ],
     },
     {
-      id: 'axes', label: 'Manche', default: 'inverted', choices: [
-        { value: 'inverted', label: 'Axes inversés (comme un vrai manche)' },
+      id: 'control', label: 'Commande du manche', default: 'mouse', choices: [
+        { value: 'mouse', label: 'Souris' },
+        { value: 'joystick', label: '<b>Joystick</b> (Thrustmaster T.16000M ou tout joystick USB) — le palonnier reste aux flèches ← →', short: 'Joystick' },
+      ],
+    },
+    {
+      id: 'axes', label: 'Sens du manche', default: 'inverted', choices: [
+        { value: 'inverted', label: 'Inversé, comme en avion (souris : les deux axes ; joystick : la profondeur)' },
         { value: 'normal', label: 'Axes normaux', short: 'Axes normaux' },
       ],
     },
   ],
   instructions: `<ul>
-    <li><b>Manche</b> (souris) : suivez le point vert avec la croix. Axes inversés par défaut : on pousse vers l’avant pour descendre, comme en avion.</li>
+    <li><b>Manche</b> (souris ou joystick, par exemple un Thrustmaster T.16000M) : suivez le point vert avec la croix. Sens inversé par défaut : on pousse vers l’avant pour descendre, comme en avion.</li>
     <li><b>Palonnier</b> (flèches ← →) : maintenez le curseur jaune sous la bille rouge qui se déplace en haut de l’écran.</li>
     <li><b>Calcul</b> : additionnez de tête les nombres qui apparaissent (positifs et négatifs, et multiplications en difficile). Le total est demandé à la fin de chaque manche.</li>
     <li>${ROUNDS} manches de ${ROUND_SEC} s, un peu plus rapides à chaque manche. Utilisez une souris plutôt qu’un pavé tactile.</li></ul>`,

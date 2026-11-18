@@ -24,12 +24,8 @@ function makeTable(rng) {
 }
 
 function tableHtml(table) {
-  const rows = [];
-  for (let i = 0; i < table.length; i += 2) {
-    const a = table[i], b = table[i + 1];
-    rows.push(`<tr><td>${a.word}</td><td>${a.code}</td>${b ? `<td>${b.word}</td><td>${b.code}</td>` : ''}</tr>`);
-  }
-  return `<table class="code-table">${rows.join('')}</table>`;
+  // responsive: word/code pairs flow onto as many columns as the screen allows
+  return `<div class="code-grid">${table.map((e) => `<div class="code-item"><b>${e.word}</b><span>${e.code}</span></div>`).join('')}</div>`;
 }
 
 function perturb(rng, code) {

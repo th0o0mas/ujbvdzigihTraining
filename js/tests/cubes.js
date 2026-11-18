@@ -249,10 +249,10 @@ export function genQuestion(rng) {
     const desc = `la face de devant passe <b>${POS_NAME[vkey(mul(R, [0, 0, 1]))]}</b>, la face du dessus passe <b>${POS_NAME[vkey(mul(R, [0, 1, 0]))]}</b> et la face de droite passe <b>${POS_NAME[vkey(mul(R, [1, 0, 0]))]}</b>`;
     return {
       tag: 'Suite de cubes',
-      visual: `<div style="display:flex;gap:10px;align-items:center;flex-wrap:wrap;justify-content:center">${views
+      visual: `<div class="cube-series">${views
         .slice(0, 3)
         .map((v, i) => cubeSvg(v, 110, String(i + 1)))
-        .join('')}<div style="width:110px;height:110px;display:grid;place-items:center;border:2px dashed #aaa;border-radius:8px;font-size:40px;color:#888">?</div></div>`,
+        .join('')}<div class="cube-q">?</div></div>`,
       prompt: 'Quel cube complète la série ?',
       options,
       answer,

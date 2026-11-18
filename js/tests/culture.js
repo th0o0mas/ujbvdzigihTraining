@@ -1,8 +1,7 @@
 import { esc, makeOptions, retry } from '../core/util.js';
 import { CULTURE } from '../data/culture-data.js';
 import { AERONEFS } from '../data/aeronefs-data.js';
-import { SILHOUETTES } from '../data/silhouettes-data.js';
-import { silhouetteSvg, VIEWS } from '../silhouettes.js';
+import { PHOTOS } from '../data/photos-data.js';
 
 const html = (s) => esc(s);
 const disjoint = (a, b) => !a.some((x) => b.includes(x));
@@ -55,17 +54,16 @@ export function aeronefQuestion(rng, card, type) {
         meta: { kind: 'aeronef', type, id: card.id, ans },
       };
     }
-    if (type === 'silhouette' && SILHOUETTES[card.id]) {
-      const view = rng.pick(Object.keys(VIEWS));
-      const same = rng.shuffle(others.filter((c) => c.cat === card.cat && SILHOUETTES[c.id]));
-      const pool = [...same, ...rng.shuffle(others.filter((c) => c.cat !== card.cat && SILHOUETTES[c.id]))].map((c) => c.nom);
+    if (type === 'photo' && PHOTOS[card.id]) {
+      const same = rng.shuffle(others.filter((c) => c.cat === card.cat && PHOTOS[c.id]));
+      const pool = [...same, ...rng.shuffle(others.filter((c) => c.cat !== card.cat && PHOTOS[c.id]))].map((c) => c.nom);
       return {
         tag: 'Reconnaissance des aéronefs',
-        visual: silhouetteSvg(SILHOUETTES[card.id], view, { w: 420, h: 250, label: VIEWS[view] }),
-        prompt: 'Quel aéronef a cette silhouette ?',
+        visual: `<img class="q-photo" src="${esc(PHOTOS[card.id].src)}" alt="Photo d’un aéronef" decoding="async">`,
+        prompt: 'Quel aéronef est sur cette photo ?',
         ...makeOptions(rng, card.nom, pool, { count: 4, html }),
-        explanation: `<b>${esc(card.nom)}</b> — ${esc(card.signes)}`,
-        meta: { kind: 'aeronef', type, id: card.id, view },
+        explanation: `<b>${esc(card.nom)}</b> — ${esc(card.signes)} <span class="hint">(Photo : ${esc(PHOTOS[card.id].author)}, ${esc(PHOTOS[card.id].license)}.)</span>`,
+        meta: { kind: 'aeronef', type, id: card.id },
       };
     }
     // identification from the distinctive features, among aircraft of the same category
@@ -98,7 +96,7 @@ export function generate(rng, count, opts = {}) {
   const bank = rng.shuffle(CULTURE).slice(0, nBank).map((it) => bankQuestion(rng, it));
   const aero = [];
   let deck = [];
-  const types = ['silhouette', 'silhouette', 'identification', 'constructeur', 'pays', 'motorisation'];
+  const types = ['photo', 'photo', 'identification', 'constructeur', 'pays', 'motorisation'];
   for (let i = 0; i < count - nBank; i++) {
     if (!deck.length) deck = rng.shuffle(AERONEFS);
     aero.push(aeronefQuestion(rng, deck.pop(), rng.pick(types)));
@@ -125,7 +123,7 @@ export default {
   ],
   get instructions() {
     return `<ul><li>Questions à choix multiples (4 propositions) : histoire, armée de l’Air et de l’Espace, mécanique du vol, instruments, navigation, météo, facteurs humains, espace…</li>
-      <li>Une partie des questions porte sur les <b>${AERONEFS.length} fiches d’aéronefs</b> (silhouettes, constructeur, pays, motorisation, signes distinctifs). Apprenez-les avec les <a href="#/flashcards">flashcards</a>.</li>
+      <li>Une partie des questions porte sur les <b>${AERONEFS.length} fiches d’aéronefs</b> (photos, constructeur, pays, motorisation, signes distinctifs). Apprenez-les avec les <a href="#/flashcards">flashcards</a>.</li>
       <li>Banque de culture générale : ${CULTURE.length} questions. Vous pouvez en ajouter dans <code>data/culture-perso.json</code> (voir <code>data/LISEZMOI.md</code>).</li></ul>`;
   },
   generate,

@@ -175,11 +175,14 @@ export function genQuestion(rng, hard = false) {
     const nArc = hard ? 6 : 4;
     const types = rng.shuffle([...rng.sample(ARC_GAUGES, nArc), 'alt', 'hdg']);
     const insts = types.map((t) => makeInstrument(rng, t, hard));
-    const cols = hard ? 4 : 3;
     const W = 150, H = 160;
-    const rows = Math.ceil(insts.length / cols);
-    const panel = `<svg xmlns="http://www.w3.org/2000/svg" width="${cols * W * (hard ? 1.2 : 1.4)}" height="${rows * H * (hard ? 1.2 : 1.4)}" viewBox="0 0 ${cols * W} ${rows * H}" style="max-width:100%;height:auto">
+    // two layouts of the same panel: wide screens, and phones (2 columns, bigger dials)
+    const layout = (cols, zoom, cls) => {
+      const rows = Math.ceil(insts.length / cols);
+      return `<svg class="${cls}" xmlns="http://www.w3.org/2000/svg" width="${cols * W * zoom}" height="${rows * H * zoom}" viewBox="0 0 ${cols * W} ${rows * H}" style="max-width:100%;height:auto">
       ${insts.map((ins, k) => `<g data-inst="${k}" transform="translate(${(k % cols) * W + 10} ${Math.floor(k / cols) * H + 4})">${ins.svg}</g>`).join('')}</svg>`;
+    };
+    const panel = layout(hard ? 4 : 3, hard ? 1.2 : 1.4, 'panel-wide') + layout(2, 1.3, 'panel-narrow');
     const target = rng.int(0, insts.length - 1);
     const t = insts[target];
     const instMeta = { value: t.value, title: t.title, type: t.type, style: t.style, half: t.half, target, hard };

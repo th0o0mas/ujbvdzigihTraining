@@ -2,8 +2,7 @@
 import { AERONEFS, CATEGORIES } from './data/aeronefs-data.js';
 import { esc } from './core/util.js';
 import * as store from './core/storage.js';
-import { SILHOUETTES } from './data/silhouettes-data.js';
-import { silhouetteSvg, VIEWS } from './silhouettes.js';
+import { PHOTOS } from './data/photos-data.js';
 
 // progress is stored per user via core/storage.js (document 'flashcards')
 const PREFS = 'eopn-training.flashcards.prefs.v1';
@@ -54,18 +53,27 @@ function cardBack(c) {
     <dt>Signes distinctifs</dt><dd>${esc(c.signes)}</dd>
     ${c.anecdote ? `<dt>À retenir</dt><dd>${esc(c.anecdote)}</dd>` : ''}</dl>`;
 }
-const silOf = (c) => SILHOUETTES[c.id];
-const threeViews = (c, w = 200, h = 140) => `<div class="fc-views">${Object.keys(VIEWS).map((v) => silhouetteSvg(silOf(c), v, { w, h, label: VIEWS[v] })).join('')}</div>`;
+/** real photo of the aircraft (Wikimedia Commons, free licence) — or the user's own image */
+export const photoOf = (c) => PHOTOS[c.id] || (c.image ? { src: c.image } : null);
+export const photoHtml = (c, cls = 'fc-photo') => {
+  const p = photoOf(c);
+  return p ? `<img class="${cls}" src="${esc(p.src)}" alt="Photo d’un aéronef" loading="lazy" decoding="async">` : '';
+};
+export const creditHtml = (c) => {
+  const p = PHOTOS[c.id];
+  return p ? `<p class="photo-credit">Photo : ${esc(p.author)} — ${p.licenseUrl ? `<a href="${esc(p.licenseUrl)}" target="_blank" rel="noopener noreferrer">${esc(p.license)}</a>` : esc(p.license)}, <a href="${esc(p.source)}" target="_blank" rel="noopener noreferrer">Wikimedia Commons</a></p>` : '';
+};
 const img = (c) => (c.image ? `<img src="${esc(c.image)}" alt="" style="max-width:100%;max-height:220px;border-radius:8px;margin:.5rem auto;display:block">` : '');
 
 export function renderFlashcards(app, topbar) {
   const progress = store.getDoc('flashcards');
   const prefs = { dir: 'name', view: 'random', cats: allCats(), ...load(PREFS, {}) };
-  // silhouette recognition is tracked separately from the « fiche » knowledge
-  const pk = (c) => (prefs.dir === 'shadow' ? `sil-${c.id}` : c.id);
+  if (prefs.dir === 'shadow') prefs.dir = 'photo'; // former « silhouette » mode
+  // photo recognition is tracked separately from the « fiche » knowledge
+  const pk = (c) => (prefs.dir === 'photo' ? `pho-${c.id}` : c.id);
   let cleanup = null;
 
-  const selected = () => AERONEFS.filter((c) => prefs.cats.includes(c.cat) && (prefs.dir !== 'shadow' || silOf(c)));
+  const selected = () => AERONEFS.filter((c) => prefs.cats.includes(c.cat) && (prefs.dir !== 'photo' || photoOf(c)));
   const isDue = (c) => !progress[pk(c)] || progress[pk(c)].due <= Date.now();
 
   function overview() {
@@ -84,11 +92,9 @@ export function renderFlashcards(app, topbar) {
         <div style="margin:.4rem 0 .8rem">
           <label><input type="radio" name="fcdir" value="name" ${prefs.dir === 'name' ? 'checked' : ''}> Nom → fiche (que savez-vous de cet appareil ?)</label><br>
           <label><input type="radio" name="fcdir" value="desc" ${prefs.dir === 'desc' ? 'checked' : ''}> Description → nom (reconnaître l’appareil)</label><br>
-          <label><input type="radio" name="fcdir" value="shadow" ${prefs.dir === 'shadow' ? 'checked' : ''}> <b>Silhouette → nom</b> (reconnaître l’appareil à son ombre ou à sa vue de face / de profil)</label>
+          <label><input type="radio" name="fcdir" value="photo" ${prefs.dir === 'photo' ? 'checked' : ''}> <b>Photo → nom</b> (reconnaître l’appareil sur une vraie photo)</label>
         </div>
-        ${prefs.dir === 'shadow' ? `<b>Vue montrée</b>
-        <div style="margin:.4rem 0 .8rem">${[['random', 'Au hasard'], ...Object.entries(VIEWS)].map(([v, l]) => `<label style="margin-right:1rem"><input type="radio" name="fcview" value="${v}" ${prefs.view === v ? 'checked' : ''}> ${l}</label>`).join('')}
-          <p class="hint">Silhouettes dessinées d’après les dimensions réelles (proportions approchées). Vue de face et vue arrière donnent la même silhouette.</p></div>` : ''}
+        ${prefs.dir === 'photo' ? '<p class="hint">Photos réelles (Wikimedia Commons, licences libres) — voir les <a href="#/credits">crédits</a>.</p>' : ''}
         <table class="tbl"><tr><th>Nouvelles</th><th>Boîte 1</th><th>Boîte 2</th><th>Boîte 3</th><th>Boîte 4</th><th>Boîte 5 (acquises)</th></tr>
           <tr>${boxes.map((n) => `<td>${n}</td>`).join('')}</tr></table>
         <p style="display:flex;gap:.6rem;flex-wrap:wrap;margin-top:1rem">
@@ -108,10 +114,6 @@ export function renderFlashcards(app, topbar) {
       prefs.dir = r.value;
       save(PREFS, prefs);
       overview();
-    }));
-    app.querySelectorAll('input[name=fcview]').forEach((r) => (r.onchange = () => {
-      prefs.view = r.value;
-      save(PREFS, prefs);
     }));
     document.getElementById('fcDue').onclick = () => {
       // due cards: overdue first (lowest box), then new ones
@@ -139,17 +141,16 @@ export function renderFlashcards(app, topbar) {
       const c = queue[0];
       if (!c) return finish();
       flipped = false;
-      const view = prefs.view === 'random' || !VIEWS[prefs.view] ? Object.keys(VIEWS)[Math.floor(Math.random() * 3)] : prefs.view;
       const front = prefs.dir === 'name'
         ? `<div class="fc-name">${esc(c.nom)}</div><div class="hint">${esc(c.cat)}</div>${img(c)}`
-        : prefs.dir === 'shadow'
-          ? `<div class="hint">Quel est cet aéronef ? — ${esc(VIEWS[view])}</div><div class="fc-sil">${silhouetteSvg(silOf(c), view, { w: 520, h: 300 })}</div>`
+        : prefs.dir === 'photo'
+          ? `<div class="hint">Quel est cet aéronef ?</div><div class="fc-sil">${photoHtml(c)}</div>`
           : `<div class="hint">${esc(c.cat)} — ${esc(c.role)}</div><div class="fc-desc">« ${esc(c.signes)} »</div><div class="hint">${esc(c.motorisation)}</div>`;
       app.innerHTML = `${topbar()}<main class="container narrow">
         <div style="display:flex;justify-content:space-between;align-items:center"><a href="#/flashcards" class="back" id="fcBack">← Flashcards</a><span class="hint">${done} / ${total}</span></div>
         <div class="panel fc-card" id="fcCard" tabindex="0">
           ${front}
-          <div id="fcBackSide" style="display:none"><hr>${prefs.dir !== 'name' ? `<div class="fc-name">${esc(c.nom)}</div>${prefs.dir === 'shadow' ? threeViews(c) : ''}${img(c)}` : ''}${cardBack(c)}</div>
+          <div id="fcBackSide" style="display:none"><hr>${prefs.dir !== 'name' ? `<div class="fc-name">${esc(c.nom)}</div>${prefs.dir === 'desc' ? photoHtml(c) : ''}` : photoHtml(c)}${cardBack(c)}${creditHtml(c)}</div>
         </div>
         <div id="fcBtns" style="display:flex;gap:.6rem;justify-content:center;flex-wrap:wrap">
           <button class="btn primary" id="fcFlip" type="button">Retourner (Espace)</button>
@@ -204,7 +205,7 @@ export function renderFlashcards(app, topbar) {
       <a href="#/flashcards" class="back" id="fcBack">← Flashcards</a><h1>Catalogue des aéronefs</h1>
       ${cats.map((cat) => `<h2 class="section-title">${esc(cat)}</h2>${AERONEFS.filter((c) => c.cat === cat).map((c) => `
         <details class="review ok"><summary><b>${esc(c.nom)}</b><span class="sum-text">${esc(c.role)}</span></summary>
-        <div class="review-body">${silOf(c) ? threeViews(c) : ''}${img(c)}${cardBack(c)}<p class="hint">Fiche : boîte ${progress[c.id]?.box || '— (nouvelle)'} · Silhouette : boîte ${progress[`sil-${c.id}`]?.box || '— (nouvelle)'}</p></div></details>`).join('')}`).join('')}
+        <div class="review-body">${photoHtml(c)}${creditHtml(c)}${cardBack(c)}<p class="hint">Fiche : boîte ${progress[c.id]?.box || '— (nouvelle)'} · Photo : boîte ${progress[`pho-${c.id}`]?.box || '— (nouvelle)'}</p></div></details>`).join('')}`).join('')}
     </main>`;
     document.getElementById('fcBack').onclick = (e) => {
       e.preventDefault();
